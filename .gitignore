@@ -69,3 +69,5 @@ hs_err_pid*
 /.settings/
 /.classpath
 /.project
+
+.spotless-index

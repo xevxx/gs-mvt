@@ -11,9 +11,9 @@
         http://www.springframework.org/schema/context
         http://www.springframework.org/schema/context/spring-context.xsd">
 
-	<mvc:annotation-driven/>
+	<!-- <mvc:annotation-driven/>
 	<context:annotation-config />
-	<context:component-scan base-package="org.geoserver.slippymap" />
+	<context:component-scan base-package="org.geoserver.slippymap" /> -->
 
     <!-- controller for slippy map requests -->
 	<bean id="slippyTilesController" class="org.geoserver.slippymap.SlippyTilesController">

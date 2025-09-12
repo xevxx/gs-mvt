@@ -5,28 +5,18 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.math.RoundingMode;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
+import org.geoserver.wms.GetMapRequest;
 import org.geoserver.wms.WMSMapContent;
 import org.geoserver.wms.WebMap;
-import org.geotools.api.data.Query;
-import org.geotools.api.data.SimpleFeatureSource;
-import org.geotools.api.feature.simple.SimpleFeatureType;
 import org.geotools.api.filter.Filter;
 import org.geotools.api.filter.FilterFactory;
-import org.geotools.api.filter.spatial.BBOX;
-import org.geotools.api.referencing.FactoryException;
-import org.geotools.api.referencing.operation.TransformException;
 import org.geotools.api.style.FeatureTypeStyle;
 import org.geotools.api.style.Rule;
 import org.geotools.api.style.Style;
-import org.geotools.data.DataUtilities;
-import org.geotools.factory.CommonFactoryFinder;
-import org.geotools.feature.FeatureCollection;
 import org.geotools.geometry.jts.ReferencedEnvelope;
-import org.geotools.map.Layer;
 import org.geotools.util.logging.Logging;
 
 /**
@@ -36,6 +26,7 @@ import org.geotools.util.logging.Logging;
 public class StreamingMVTMap extends WebMap {
 
     private static final Logger LOGGER = Logging.getLogger(StreamingMVTMap.class);
+
     /**
      * The Mapbox client requests 512x512 tiles but the target tile has 256 units in each direction.
      */
@@ -78,6 +69,7 @@ public class StreamingMVTMap extends WebMap {
                             + fallBackGen
                             + ")");
         }
+        // Delegate to the second overload (which DOES handle smallGeomMode / encThreshold)
         this.encode(out, avoidEmptyProto, smallGeometryThreshold, genFactor);
     }
 
@@ -97,8 +89,62 @@ public class StreamingMVTMap extends WebMap {
             double smallGeometryThreshold,
             double genFactor)
             throws IOException {
+
         ReferencedEnvelope renderingArea = this.mapContent.getRenderingArea();
         try {
+            // ---- ENV (normalize to lowercase keys)
+            GetMapRequest req = this.mapContent != null ? this.mapContent.getRequest() : null;
+            java.util.Map<String, Object> rawEnv =
+                    (req != null && req.getEnv() != null)
+                            ? req.getEnv()
+                            : java.util.Collections.emptyMap();
+
+            java.util.Map<String, Object> env = new java.util.HashMap<>();
+            for (java.util.Map.Entry<String, Object> e : rawEnv.entrySet()) {
+                env.put(e.getKey().toLowerCase(), e.getValue());
+            }
+
+            // ---- read flags
+            String smallGeomMode = "drop";
+            Object modeVal = env.get("small_geom_mode");
+            if (modeVal != null) smallGeomMode = String.valueOf(modeVal).trim().toLowerCase();
+
+            int pixelSize = 1;
+            Object pxVal = env.get("pixel_size");
+            if (pxVal != null) {
+                try {
+                    pixelSize = Math.max(1, Integer.parseInt(String.valueOf(pxVal).trim()));
+                } catch (Exception ignore) {
+                }
+            }
+
+            boolean stripAttributes = false;
+            Object saVal = env.get("strip_attributes");
+            if (saVal != null) {
+                String s = String.valueOf(saVal).trim().toLowerCase();
+                stripAttributes = "true".equals(s) || "1".equals(s) || "yes".equals(s);
+            }
+
+            boolean pixelAsPoint = false;
+            Object papVal = env.get("pixel_as_point");
+            if (papVal != null) {
+                String s = String.valueOf(papVal).trim().toLowerCase();
+                pixelAsPoint = "true".equals(s) || "1".equals(s) || "yes".equals(s);
+            }
+
+            // KEEP_ATTRS whitelist (optional)
+            java.util.Set<String> keepAttrs = new java.util.LinkedHashSet<>();
+            Object keepEnv = env.get("keep_attrs");
+            if (keepEnv != null) {
+                for (String k : keepEnv.toString().split(",")) {
+                    String t = k.trim();
+                    if (!t.isEmpty()) keepAttrs.add(t);
+                }
+            }
+
+            // ---- encoder threshold: 0 when in pixel mode so placeholders aren't dropped
+            double encThreshold = "pixel".equals(smallGeomMode) ? 0.0 : smallGeometryThreshold;
+
             MVTWriter mvtWriter =
                     MVTWriter.getInstance(
                             renderingArea,
@@ -108,52 +154,72 @@ public class StreamingMVTMap extends WebMap {
                             this.mapContent.getBuffer(),
                             avoidEmptyProto,
                             genFactor,
-                            smallGeometryThreshold);
-            Map<FeatureCollection, Style> featureCollectionStyleMap = new HashMap<>();
-            FilterFactory ff = CommonFactoryFinder.getFilterFactory();
-            // Iterate through all layers. Layers can be requested through WMS with comma separation
-            for (Layer layer : this.mapContent.layers()) {
-                SimpleFeatureSource featureSource = (SimpleFeatureSource) layer.getFeatureSource();
-                SimpleFeatureType schema = featureSource.getSchema();
+                            encThreshold);
+
+            // writer uses original threshold to *detect* small geoms
+            mvtWriter.setSmallGeometryThreshold(smallGeometryThreshold);
+            mvtWriter.setSmallGeomMode(smallGeomMode);
+            mvtWriter.setPixelSize(pixelSize);
+            mvtWriter.setStripAttributes(stripAttributes);
+            mvtWriter.setPixelAsPoint(pixelAsPoint);
+            mvtWriter.setKeepAttrs(keepAttrs);
+
+            // ---- fetch features & write (unchanged)
+            java.util.Map<org.geotools.feature.FeatureCollection, org.geotools.api.style.Style>
+                    featureCollectionStyleMap = new java.util.HashMap<>();
+            org.geotools.api.filter.FilterFactory ff =
+                    org.geotools.factory.CommonFactoryFinder.getFilterFactory();
+
+            for (org.geotools.map.Layer layer : this.mapContent.layers()) {
+                org.geotools.api.data.SimpleFeatureSource featureSource =
+                        (org.geotools.api.data.SimpleFeatureSource) layer.getFeatureSource();
+                org.geotools.api.feature.simple.SimpleFeatureType schema =
+                        featureSource.getSchema();
                 String defaultGeometry = schema.getGeometryDescriptor().getName().getLocalPart();
-                // Retrieve rendering area. In case of a buffer the extent is the buffered extent
-                // and not the requested
-                // extent.
+
                 renderingArea =
                         mvtWriter.getSourceBBOXWithBuffer() != null
                                 ? mvtWriter.getSourceBBOXWithBuffer()
                                 : renderingArea;
-                BBOX bboxFilter = ff.bbox(ff.property(defaultGeometry), renderingArea);
-                Query bboxQuery = new Query(schema.getTypeName(), bboxFilter);
-                Query definitionQuery = layer.getQuery();
-                Query finalQuery =
-                        new Query(
-                                DataUtilities.mixQueries(definitionQuery, bboxQuery, "mvtEncoder"));
+
+                org.geotools.api.filter.spatial.BBOX bboxFilter =
+                        ff.bbox(ff.property(defaultGeometry), renderingArea);
+                org.geotools.api.data.Query bboxQuery =
+                        new org.geotools.api.data.Query(schema.getTypeName(), bboxFilter);
+                org.geotools.api.data.Query definitionQuery = layer.getQuery();
+                org.geotools.api.data.Query finalQuery =
+                        new org.geotools.api.data.Query(
+                                org.geotools.data.DataUtilities.mixQueries(
+                                        definitionQuery, bboxQuery, "mvtEncoder"));
+
                 if (layer.getStyle() != null) {
-                    // Add Style Filters to the request
-                    Filter styleFilter =
+                    org.geotools.api.filter.Filter styleFilter =
                             getFeatureFilterFromStyle(
                                     layer.getStyle(), ff, this.mapContent.getScaleDenominator());
                     if (styleFilter != null) {
-                        Query filterQuery = new Query(schema.getTypeName(), styleFilter);
+                        org.geotools.api.data.Query filterQuery =
+                                new org.geotools.api.data.Query(schema.getTypeName(), styleFilter);
                         finalQuery =
-                                new Query(
-                                        DataUtilities.mixQueries(
+                                new org.geotools.api.data.Query(
+                                        org.geotools.data.DataUtilities.mixQueries(
                                                 finalQuery, filterQuery, "mvtEncoder"));
                     }
                 }
+
                 finalQuery.setCoordinateSystemReproject(MVTWriter.TARGET_CRS);
                 finalQuery.setHints(definitionQuery.getHints());
                 finalQuery.setSortBy(definitionQuery.getSortBy());
                 finalQuery.setStartIndex(definitionQuery.getStartIndex());
-                // Retrieve feature collection from the layer
+
                 featureCollectionStyleMap.put(
                         featureSource.getFeatures(finalQuery), layer.getStyle());
             }
-            // Write all features to the output stream
+
             mvtWriter.writeFeatures(
                     featureCollectionStyleMap, this.mapContent.getScaleDenominator(), out);
-        } catch (TransformException | FactoryException e) {
+
+        } catch (org.geotools.api.referencing.operation.TransformException
+                | org.geotools.api.referencing.FactoryException e) {
             LOGGER.warning(e.getMessage());
         }
     }

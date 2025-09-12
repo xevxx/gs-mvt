@@ -27,6 +27,7 @@ import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.referencing.CRS;
 import org.geotools.styling.AbstractSymbolizer;
 import org.geotools.util.logging.Logging;
+import org.locationtech.jts.geom.*;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
@@ -63,6 +64,28 @@ public class MVTWriter {
 
     /** scale in y direction */
     private final double yScale;
+
+    // ADD — mode/options coming from StreamingMVTMap
+    private String smallGeomMode = "drop"; // "drop" | "pixel" | "keep"
+    private int pixelSize = 1; // in display pixels
+    private boolean stripAttributes = false;
+
+    private double smallGeometryThreshold = 0.0;
+
+    // If not already present, store rendering area reference (used below)
+    private org.geotools.geometry.jts.ReferencedEnvelope renderingAreaRef;
+
+    private boolean pixelAsPoint = false;
+
+    private java.util.Set<String> keepAttrs = java.util.Collections.emptySet();
+
+    public void setKeepAttrs(java.util.Set<String> ks) {
+        this.keepAttrs = (ks == null) ? java.util.Collections.emptySet() : ks;
+    }
+
+    public void setPixelAsPoint(boolean v) {
+        this.pixelAsPoint = v;
+    }
 
     /**
      * Retrieves an instance of the MVTWriter.
@@ -222,6 +245,7 @@ public class MVTWriter {
                         includeLayersOnEmptyFeatureList,
                         genFactor,
                         smallGeometryThreshold);
+        this.smallGeometryThreshold = smallGeometryThreshold;
     }
 
     private MVTWriter(
@@ -247,6 +271,7 @@ public class MVTWriter {
         this.xScale = this.calculateXFactor();
         this.yScale = this.calculateYFactor();
         this.vectorTileEncoder = new VectorTileEncoder(targetBBOX);
+        this.smallGeometryThreshold = 0.0;
     }
 
     /**
@@ -332,7 +357,7 @@ public class MVTWriter {
      * Adds all features to the encoder and prepares it before. So geometries are removed from the
      * attribute map and the geometry is transformed to the target tile local system
      *
-     * @param featureCollectionStyleMap the feature collection map to be encoded and its refering
+     * @param featureCollectionStyleMap the feature collection map to be encoded and its referring
      *     style
      */
     private void addFeaturesToEncoder(
@@ -355,14 +380,69 @@ public class MVTWriter {
                             }
                         }
                         // Process GeometryTransformations in Symbolizers. It is possible to render
-                        // the same geometry
-                        // with more than one symbolizer. Therefore a list is returned.
+                        // the same geometry with more than one symbolizer. Therefore a list is
+                        // returned.
                         List<Geometry> geometryList =
                                 processSymbolizers(featureStyle, feature, scaleDenominator);
                         for (Geometry geometry : geometryList) {
                             geometry = transFormGeometry(geometry);
+
+                            boolean replacedWithPixel = false;
+
+                            if (isTooSmallTile(geometry)) {
+                                switch (smallGeomMode) {
+                                    case "keep":
+                                        break;
+                                    case "pixel":
+                                        try {
+                                            if (pixelAsPoint) {
+                                                // collapse ANY small geometry to a point at
+                                                // centroid (tile coords)
+                                                GeometryFactory gf =
+                                                        geometry.getFactory() != null
+                                                                ? geometry.getFactory()
+                                                                : new GeometryFactory();
+                                                Coordinate c =
+                                                        geometry.getCentroid().getCoordinate();
+                                                geometry = gf.createPoint(c);
+                                            } else {
+                                                // type-preserving placeholder (tiny
+                                                // square/dash/point)
+                                                geometry = placeholderSameKind(geometry);
+                                            }
+                                            replacedWithPixel = true;
+                                        } catch (Exception ex) {
+                                            continue; // fallback: drop
+                                        }
+                                        break;
+                                    case "drop":
+                                    default:
+                                        continue;
+                                }
+                            }
+
+                            // Strip for ALL features; keep_attrs only applies when stripping is
+                            // enabled
+                            Map<String, Object> attrsToWrite;
+                            if (stripAttributes) {
+                                if (keepAttrs == null || keepAttrs.isEmpty()) {
+                                    attrsToWrite = java.util.Collections.emptyMap();
+                                } else {
+                                    java.util.Map<String, Object> wh = new java.util.HashMap<>();
+                                    for (String k : keepAttrs) {
+                                        if (attributeMap.containsKey(k)) {
+                                            wh.put(k, attributeMap.get(k));
+                                        }
+                                    }
+                                    attrsToWrite = wh;
+                                }
+                            } else {
+                                // no stripping → keep everything
+                                attrsToWrite = attributeMap;
+                            }
+
                             this.vectorTileEncoder.addFeature(
-                                    layerName, attributeMap, feature.getID(), geometry);
+                                    layerName, attrsToWrite, feature.getID(), geometry);
                             atLeastOneFeatureAdded = true;
                         }
                     } catch (IllegalStateException ex) {
@@ -534,5 +614,140 @@ public class MVTWriter {
         }
 
         return geom;
+    }
+
+    public void setSmallGeomMode(String mode) {
+        if (mode == null) {
+            this.smallGeomMode = "drop";
+            return;
+        }
+        String s = mode.trim().toLowerCase();
+        if (!s.equals("pixel") && !s.equals("keep")) s = "drop";
+        this.smallGeomMode = s;
+    }
+
+    // ADD
+    public void setPixelSize(int px) {
+        this.pixelSize = Math.max(1, px);
+    }
+
+    // ADD
+    public void setStripAttributes(boolean strip) {
+        this.stripAttributes = strip;
+    }
+
+    /**
+     * Create a 1-pixel placeholder geometry in tile coordinates (0–4096 grid). This guarantees that
+     * the geometry is exactly 1 rendered pixel in size, regardless of zoom or world CRS.
+     */
+    private Geometry placeholderSameKind(Geometry original) {
+        GeometryFactory gf =
+                original.getFactory() != null ? original.getFactory() : new GeometryFactory();
+
+        // Get centroid in *tile coordinates*
+        Coordinate c = original.getCentroid().getCoordinate();
+
+        // One display pixel = 1 unit in tile-local space
+        double half = 0.5 * pixelSize; // pixelSize = ENV PIXEL_SIZE (default 1)
+        if (original instanceof org.locationtech.jts.geom.Polygon
+                || original instanceof org.locationtech.jts.geom.MultiPolygon) {
+
+            // org.locationtech.jts.geom.GeometryFactory gf =
+            //         original.getFactory() != null
+            //                 ? original.getFactory()
+            //                 : new org.locationtech.jts.geom.GeometryFactory();
+
+            // centroid is already in tile-local coordinates (0..4096) at this stage
+            // org.locationtech.jts.geom.Coordinate c = original.getCentroid().getCoordinate();
+
+            // snap to integer grid and build a 1x1 square
+            int cx = (int) Math.round(c.x);
+            int cy = (int) Math.round(c.y);
+
+            org.locationtech.jts.geom.Coordinate[] ring =
+                    new org.locationtech.jts.geom.Coordinate[] {
+                        new org.locationtech.jts.geom.Coordinate(cx, cy),
+                        new org.locationtech.jts.geom.Coordinate(cx + 1, cy),
+                        new org.locationtech.jts.geom.Coordinate(cx + 1, cy + 1),
+                        new org.locationtech.jts.geom.Coordinate(cx, cy + 1),
+                        new org.locationtech.jts.geom.Coordinate(cx, cy)
+                    };
+
+            org.locationtech.jts.geom.LinearRing shell = gf.createLinearRing(ring);
+            org.locationtech.jts.geom.Polygon poly = gf.createPolygon(shell, null);
+            if (original instanceof org.locationtech.jts.geom.MultiPolygon) {
+                return gf.createMultiPolygon(new org.locationtech.jts.geom.Polygon[] {poly});
+            }
+            return poly;
+        }
+
+        // if (original instanceof Polygon || original instanceof MultiPolygon) {
+        //     Coordinate[] ring =
+        //             new Coordinate[] {
+        //                 new Coordinate(c.x - half, c.y - half),
+        //                 new Coordinate(c.x + half, c.y - half),
+        //                 new Coordinate(c.x + half, c.y + half),
+        //                 new Coordinate(c.x - half, c.y + half),
+        //                 new Coordinate(c.x - half, c.y - half)
+        //             };
+        //     LinearRing shell = gf.createLinearRing(ring);
+        //     Polygon poly = gf.createPolygon(shell, null);
+        //     if (original instanceof MultiPolygon) {
+        //         return gf.createMultiPolygon(new Polygon[] {poly});
+        //     }
+        //     return poly;
+        // }
+        // if (original instanceof Polygon || original instanceof MultiPolygon) {
+        //     // Degenerate polygon: all coords at centroid
+        //     Coordinate[] ring =
+        //             new Coordinate[] {
+        //                 new Coordinate(c.x, c.y),
+        //                 new Coordinate(c.x, c.y),
+        //                 new Coordinate(c.x, c.y),
+        //                 new Coordinate(c.x, c.y),
+        //                 new Coordinate(c.x, c.y)
+        //             };
+        //     LinearRing shell = gf.createLinearRing(ring);
+        //     Polygon poly = gf.createPolygon(shell, null);
+        //     if (original instanceof MultiPolygon) {
+        //         return gf.createMultiPolygon(new Polygon[] {poly});
+        //     }
+        //     return poly;
+        // }
+
+        if (original instanceof LineString || original instanceof MultiLineString) {
+            Coordinate a = new Coordinate(c.x - half, c.y);
+            Coordinate b = new Coordinate(c.x + half, c.y);
+            LineString line = gf.createLineString(new Coordinate[] {a, b});
+            if (original instanceof MultiLineString) {
+                return gf.createMultiLineString(new LineString[] {line});
+            }
+            return line;
+        }
+
+        // Points or anything else → point (or one-point MultiPoint)
+        Point p = gf.createPoint(new Coordinate(c.x, c.y));
+        if (original instanceof MultiPoint) {
+            return gf.createMultiPointFromCoords(new Coordinate[] {p.getCoordinate()});
+        }
+        return p;
+    }
+
+    // ADD:
+    private boolean isTooSmallTile(Geometry g) {
+        if (smallGeometryThreshold <= 0) return false;
+        if (g == null || g.isEmpty()) return true;
+        if (g instanceof Polygon || g instanceof MultiPolygon) {
+            return g.getArea() < smallGeometryThreshold;
+        }
+        if (g instanceof LineString || g instanceof MultiLineString) {
+            return g.getLength() < smallGeometryThreshold;
+        }
+        // Points: don't drop; they’re already minimal
+        return false;
+    }
+
+    public void setSmallGeometryThreshold(double t) {
+        this.smallGeometryThreshold = t;
     }
 }

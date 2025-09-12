@@ -2,13 +2,17 @@ package org.geoserver.wms.mvt;
 
 import java.io.IOException;
 import java.util.Set;
+import java.util.logging.Logger;
 import org.geoserver.platform.ServiceException;
 import org.geoserver.wms.GetMapOutputFormat;
 import org.geoserver.wms.MapProducerCapabilities;
 import org.geoserver.wms.WMSMapContent;
+import org.geotools.util.logging.Logging;
 
 /** The Streaming map outputFormat class for WMS PBF files */
 public class MVTStreamingMapOutputFormat implements GetMapOutputFormat {
+
+    private static final Logger LOGGER = Logging.getLogger(MVTStreamingMapOutputFormat.class);
 
     private static MapProducerCapabilities CAPABILITIES =
             // new MapProducerCapabilities(false, false, false, false, null);
@@ -19,6 +23,7 @@ public class MVTStreamingMapOutputFormat implements GetMapOutputFormat {
      * @see org.geoserver.wms.GetMapOutputFormat#getOutputFormatNames()
      */
     public Set<String> getOutputFormatNames() {
+        LOGGER.info("Registering MVT formats: " + MVT.OUTPUT_FORMATS);
         return MVT.OUTPUT_FORMATS;
     }
 

@@ -1,101 +1,133 @@
 package org.geoserver.slippymap;
 
-import static org.geoserver.wms.mvt.MVTStreamingMapResponse.*;
+import static org.geoserver.wms.mvt.MVTStreamingMapResponse.AVOID_EMPTY_PROTO;
+import static org.geoserver.wms.mvt.MVTStreamingMapResponse.PARAM_GENERALISATION_FACTOR;
+import static org.geoserver.wms.mvt.MVTStreamingMapResponse.PARAM_GENERALISATION_LEVEL;
+import static org.geoserver.wms.mvt.MVTStreamingMapResponse.PARAM_SMALL_GEOM_THRESHOLD;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.Map;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import org.geoserver.wms.GeneralisationLevel;
 import org.geotools.api.referencing.ReferenceIdentifier;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.geometry.jts.JTS;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.locationtech.jts.geom.Polygon;
-import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.WebDataBinder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.mvc.Controller;
 
 /**
- * Slippy Map Tiles controller that converts the requests into WMS requests. Answers with an
- * redirect to the WMS service so that the security rules of the WMS service are used.
+ * Slippy Map Tiles controller that converts /slippymap/{layers}/{z}/{x}/{y}.{ext} into a WMS GetMap
+ * forward, so WMS security and output formats are reused.
+ *
+ * <p>This version is annotation-free to avoid requiring <mvc:annotation-driven/>, which can
+ * interfere with GeoServer REST mappings.
  */
-@Controller
-// @RequestMapping("/slippymap")
-public class SlippyTilesController {
+public class SlippyTilesController implements Controller {
 
     private int defaultBuffer = 10;
-    private String defaultFormat = "application/vnd.mapbox-vector-tile";
+    private String defaultFormat =
+            org.geoserver.wms.mvt.MVT.MIME_TYPE; // e.g. application/x-mvt-custom
     private String defaultStyles = "";
 
+    /** Mapping of file extensions (e.g. "pbf") to MIME types (e.g. application/x-mvt-custom). */
     private Map<String, String> supportedOutputFormats;
+
+    /** Mapping of file extensions (e.g. "pbf") to default tile size (string, e.g. "256"). */
     private Map<String, String> defaultTileSize;
 
-    @InitBinder
-    public void initBinder(WebDataBinder dataBinder) {
-        dataBinder.registerCustomEditor(
-                GeneralisationLevel.class, new GeneralisationLevelEnumConverter());
-    }
-
-    /*@ResponseBody
-    @RequestMapping(value = "/slippymap/**", produces = {"application/text"})
-    public String testGet(  @PathVariable(required = false) String test,
-                            @PathVariable(required = false) Integer z,
-                            HttpServletRequest request) {
-        final String path =
-                request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE).toString();
-        return test;
-    }*/
-
-    // @RequestMapping(path = "/slippymap/{layers}", produces = {"application/text"})
-    @RequestMapping(path = "/slippymap/{layers}/{z}/{x}/{y}.{format}", method = RequestMethod.GET)
-    public void doGetSlippyWmsMap(
-            @PathVariable String layers,
-            @PathVariable(required = false) int z,
-            @PathVariable(required = false) int x,
-            @PathVariable(required = false) int y,
-            @PathVariable(required = false) String format,
-            @RequestParam(value = "buffer", required = false) Integer buffer,
-            @RequestParam(value = "tileSize", required = false) Integer tileSize,
-            @RequestParam(value = "styles", required = false) String styles,
-            @RequestParam(value = "time", required = false) String time,
-            @RequestParam(value = "sld", required = false) String sld,
-            @RequestParam(value = "sld_body", required = false) String sld_body,
-            @RequestParam(value = PARAM_GENERALISATION_FACTOR, required = false) Double gen_factor,
-            @RequestParam(value = PARAM_GENERALISATION_LEVEL, required = false)
-                    GeneralisationLevel gen_level,
-            @RequestParam(value = PARAM_SMALL_GEOM_THRESHOLD, required = false)
-                    Double small_geom_threshold,
-            @RequestParam(value = AVOID_EMPTY_PROTO, required = false) Boolean avoid_empty_proto,
-            @RequestParam(value = "cql_filter", required = false) String cql_filter,
-            @RequestParam(value = "bboxToBoundsViewparam", required = false, defaultValue = "false")
-                    boolean bboxToBoundsViewparam,
-            @RequestParam(value = "viewparams", required = false) String viewParams,
-            final HttpServletRequest request,
-            final HttpServletResponse response)
+    @Override
+    public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
             throws IOException, ServletException {
 
-        // Build relative WMS redirect URL from Path Variables and optional request params
+        // Expect path: /slippymap/{layers}/{z}/{x}/{y}.{ext}
+        String uri = request.getRequestURI();
+        String ctx = request.getContextPath() == null ? "" : request.getContextPath();
+        String servlet = request.getServletPath() == null ? "" : request.getServletPath();
+        String path = uri.substring((ctx + servlet).length()); // should start with /slippymap/...
+
+        String[] parts = path.split("/");
+        if (parts.length < 6 || !"/slippymap".equals("/" + parts[1])) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return null;
+        }
+
+        String layersEnc = parts[2];
+        String layers = urlDecode(layersEnc);
+
+        int z, x, y;
+        String ext;
+        try {
+            z = Integer.parseInt(parts[3]);
+            x = Integer.parseInt(parts[4]);
+
+            String yext = parts[5];
+            int dot = yext.lastIndexOf('.');
+            if (dot < 0) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return null;
+            }
+            y = Integer.parseInt(yext.substring(0, dot));
+            ext = yext.substring(dot + 1).toLowerCase();
+        } catch (Exception e) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return null;
+        }
+
+        // Optional query params
+        Integer buffer = optInt(request.getParameter("buffer"));
+        Integer tileSize = optInt(request.getParameter("tileSize"));
+        String styles = opt(request.getParameter("styles"), defaultStyles);
+        String time = request.getParameter("time");
+        String sld = request.getParameter("sld");
+        String sld_body = request.getParameter("sld_body");
+        String cql_filter = request.getParameter("cql_filter");
+        boolean bboxToBoundsViewparam =
+                "true"
+                        .equalsIgnoreCase(
+                                opt(request.getParameter("bboxToBoundsViewparam"), "false"));
+        String viewParams = request.getParameter("viewparams");
+
+        // ENV parameters (plain strings)
+        String gen_factor = request.getParameter(PARAM_GENERALISATION_FACTOR); // e.g. "0.7"
+        String gen_level = request.getParameter(PARAM_GENERALISATION_LEVEL); // e.g. "low"
+        String small_geom_threshold = request.getParameter(PARAM_SMALL_GEOM_THRESHOLD);
+        String avoid_empty_proto = request.getParameter(AVOID_EMPTY_PROTO);
+
+        // MIME by extension mapping, fallback to default
+        String mime = (supportedOutputFormats != null) ? supportedOutputFormats.get(ext) : null;
+        if (mime == null) mime = defaultFormat;
+
+        // Compute bbox in EPSG:3857
         ReferencedEnvelope bbox = SlippyMapTileCalculator.tile2boundingBox(x, y, z, 3857);
-        StringBuilder sb = new StringBuilder("/wms?");
-        sb.append("STYLES=").append(styles != null ? styles : defaultStyles);
-        sb.append("&LAYERS=").append(layers);
-        sb.append("&FORMAT=")
+
+        // Build WMS forward URL
+        StringBuilder sb = new StringBuilder("/wms?request=GetMap&service=WMS&version=1.1.1");
+        sb.append("&format=").append(urlEncode(mime));
+        sb.append("&layers=").append(urlEncode(layers));
+        sb.append("&styles=").append(urlEncode(styles));
+        sb.append("&width=")
                 .append(
-                        format != null
-                                        && supportedOutputFormats != null
-                                        && !supportedOutputFormats.isEmpty()
-                                ? supportedOutputFormats.get(format)
-                                : defaultFormat);
-        sb.append("&SERVICE=").append("WMS");
-        sb.append("&VERSION=").append("1.1.1");
-        sb.append("&REQUEST=").append("GetMap");
-        sb.append("&SRS=").append(getCRSIdentifier(bbox.getCoordinateReferenceSystem()));
-        sb.append("&BBOX=")
+                        tileSize != null
+                                ? tileSize
+                                : (defaultTileSize != null
+                                        ? defaultTileSize.getOrDefault(ext, "256")
+                                        : "256"));
+        sb.append("&height=")
+                .append(
+                        tileSize != null
+                                ? tileSize
+                                : (defaultTileSize != null
+                                        ? defaultTileSize.getOrDefault(ext, "256")
+                                        : "256"));
+        sb.append("&srs=").append(getCRSIdentifier(bbox.getCoordinateReferenceSystem()));
+        sb.append("&bbox=")
                 .append(bbox.getMinX())
                 .append(',')
                 .append(bbox.getMinY())
@@ -103,94 +135,91 @@ public class SlippyTilesController {
                 .append(bbox.getMaxX())
                 .append(',')
                 .append(bbox.getMaxY());
-        sb.append("&WIDTH=").append(tileSize != null ? tileSize : defaultTileSize.get(format));
-        sb.append("&HEIGHT=").append(tileSize != null ? tileSize : defaultTileSize.get(format));
-        sb.append("&BUFFER=").append(buffer != null ? buffer : defaultBuffer);
-        if (time != null) {
-            sb.append("&TIME=").append(time);
-        }
-        if (sld != null) {
-            sb.append("&SLD=").append(sld);
-        }
-        if (sld_body != null) {
-            sb.append("&SLD_BODY=").append(sld_body);
-        }
-        if (cql_filter != null) {
-            sb.append("&CQL_FILTER=").append(cql_filter);
-        }
-        boolean envAppended = false;
-        if (gen_factor != null) {
-            sb.append("&ENV=").append(PARAM_GENERALISATION_FACTOR).append(":").append(gen_factor);
-            envAppended = true;
-        }
-        if (gen_level != null) {
-            if (!envAppended) {
-                sb.append("&ENV=");
-                envAppended = true;
-            } else {
-                sb.append(";");
-            }
-            sb.append(PARAM_GENERALISATION_LEVEL).append(":").append(gen_level.getValue());
-        }
-        if (small_geom_threshold != null) {
-            if (!envAppended) {
-                sb.append("&ENV=");
-            } else {
-                sb.append(";");
-            }
-            sb.append(PARAM_SMALL_GEOM_THRESHOLD).append(":").append(small_geom_threshold);
-        }
-        if (avoid_empty_proto != null) {
-            if (!envAppended) {
-                sb.append("&ENV=");
-            } else {
-                sb.append(";");
-            }
-            sb.append(AVOID_EMPTY_PROTO).append(":").append(avoid_empty_proto);
-        }
-        // no view params, just encode bbox in viewparams param for geoserver request
+
+        if (buffer != null) sb.append("&buffer=").append(buffer);
+        if (time != null) sb.append("&time=").append(urlEncode(time));
+        if (sld != null) sb.append("&sld=").append(urlEncode(sld));
+        if (sld_body != null) sb.append("&sld_body=").append(urlEncode(sld_body));
+        if (cql_filter != null) sb.append("&cql_filter=").append(urlEncode(cql_filter));
+
+        // ENV=param1:val;param2:val...
+        StringBuilder env = new StringBuilder();
+        if (gen_factor != null) appendEnv(env, PARAM_GENERALISATION_FACTOR, gen_factor);
+        if (gen_level != null) appendEnv(env, PARAM_GENERALISATION_LEVEL, gen_level);
+        if (small_geom_threshold != null)
+            appendEnv(env, PARAM_SMALL_GEOM_THRESHOLD, small_geom_threshold);
+        if (avoid_empty_proto != null) appendEnv(env, AVOID_EMPTY_PROTO, avoid_empty_proto);
+        if (env.length() > 0) sb.append("&env=").append(urlEncode(env.toString()));
+
+        // VIEWPARAMS merging — mirrors the original behavior
         if (bboxToBoundsViewparam && viewParams == null) {
-            sb.append("&VIEWPARAMS=").append(buildBoundsViewparam(bbox));
-        }
-        // no bboxToBounds but external viewparams, append viewparams to geoserver request
-        else if (!bboxToBoundsViewparam && viewParams != null) {
-            sb.append("&VIEWPARAMS=").append(viewParams);
-        }
-        // both, merge external viewparams and bbox to geoserver request
-        else if (bboxToBoundsViewparam && viewParams != null) {
-            sb.append("&VIEWPARAMS=").append(viewParams);
+            sb.append("&viewparams=").append(buildBoundsViewparam(bbox)); // already encoded inside
+        } else if (!bboxToBoundsViewparam && viewParams != null) {
+            sb.append("&viewparams=").append(urlEncode(viewParams));
+        } else if (bboxToBoundsViewparam && viewParams != null) {
+            sb.append("&viewparams=").append(viewParams);
             if (!viewParams.endsWith(";")) {
                 sb.append(";");
             }
-            sb.append(buildBoundsViewparam(bbox));
+            sb.append(buildBoundsViewparam(bbox)); // encoded block appended
         }
-        String url = sb.toString();
+
         RequestDispatcher dispatcher =
-                request.getRequestDispatcher(response.encodeRedirectURL(url));
+                request.getRequestDispatcher(response.encodeRedirectURL(sb.toString()));
         dispatcher.forward(request, response);
+        return null;
+    }
+
+    // --------- helpers ---------
+
+    private static Integer optInt(String s) {
+        try {
+            return (s == null || s.isEmpty()) ? null : Integer.valueOf(s);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String opt(String v, String d) {
+        return (v == null || v.isEmpty()) ? d : v;
+    }
+
+    private static String urlEncode(String s) throws UnsupportedEncodingException {
+        return s == null ? "" : URLEncoder.encode(s, "UTF-8");
+    }
+
+    private static String urlDecode(String s) throws UnsupportedEncodingException {
+        return s == null ? "" : URLDecoder.decode(s, "UTF-8");
+    }
+
+    private static void appendEnv(StringBuilder env, String key, String value) {
+        if (value == null) return;
+        if (env.length() > 0) env.append(';');
+        env.append(key).append(':').append(value);
     }
 
     private String buildBoundsViewparam(ReferencedEnvelope bbox)
             throws UnsupportedEncodingException {
         Polygon poly = JTS.toGeometry(bbox);
-        String boundsWKT = "bounds:'" + poly.toText() + "';";
+        String boundsWKT = "bounds:'" + poly.toText() + "';"; // e.g. bounds:'POLYGON(...)';
         boundsWKT = boundsWKT.replaceAll(", ", "|");
-        boundsWKT = URLEncoder.encode(boundsWKT, "UTF-8");
-        return boundsWKT;
+        return URLEncoder.encode(boundsWKT, "UTF-8");
     }
 
-    private String getCRSIdentifier(CoordinateReferenceSystem coordinateReferenceSystem) {
+    private String getCRSIdentifier(CoordinateReferenceSystem crs) {
         String name = "";
-        if (coordinateReferenceSystem.getIdentifiers() == null) {
-            name = coordinateReferenceSystem.getName().toString();
+        if (crs.getIdentifiers() == null || crs.getIdentifiers().isEmpty()) {
+            name = crs.getName() != null ? crs.getName().toString() : "";
         } else {
-            for (ReferenceIdentifier identifier : coordinateReferenceSystem.getIdentifiers()) {
+            for (ReferenceIdentifier identifier : crs.getIdentifiers()) {
                 name = identifier.toString();
                 break;
             }
         }
         return name;
     }
+
+    // --------- setters for Spring wiring ---------
 
     public void setDefaultBuffer(int defaultBuffer) {
         this.defaultBuffer = defaultBuffer;
@@ -204,28 +233,10 @@ public class SlippyTilesController {
         this.defaultStyles = defaultStyles;
     }
 
-    public Map<String, String> getSupportedOutputFormats() {
-        return supportedOutputFormats;
-    }
-
-    /**
-     * Mapping of file endings to mime types / output formats know by the geoserver. Unfortunately
-     * file endings are not recored by the {@link org.geoserver.wms.GetMapOutputFormat} interface so
-     * this has to be entered here manually.
-     *
-     * @param supportedOutputFormats the outputFormat to file ending mapping
-     */
     public void setSupportedOutputFormats(Map<String, String> supportedOutputFormats) {
         this.supportedOutputFormats = supportedOutputFormats;
     }
 
-    /**
-     * Mapping of file endings to the default tile size. While png slippy maps are requested by
-     * default in 256x256 mapbox requests the vector tiles in 512x512. The tileSize is important to
-     * calculate the scale denominators and pixel offsets
-     *
-     * @param defaultTileSize a map of the default tile sizes
-     */
     public void setDefaultTileSize(Map<String, String> defaultTileSize) {
         this.defaultTileSize = defaultTileSize;
     }

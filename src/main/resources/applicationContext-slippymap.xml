@@ -1,0 +1,34 @@
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="
+         http://www.springframework.org/schema/beans
+         http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+  <bean id="slippyTilesController" class="org.geoserver.slippymap.SlippyTilesController">
+    <property name="supportedOutputFormats">
+      <map>
+        <!-- .pbf → your plugin’s MIME -->
+        <entry key="pbf" value="#{T(org.geoserver.wms.mvt.MVT).MIME_TYPE}"/>
+      </map>
+    </property>
+    <property name="defaultTileSize">
+      <map>
+        <entry key="pbf" value="256"/>
+      </map>
+    </property>
+    <!-- optional defaults -->
+    <property name="defaultStyles" value=""/>
+    <property name="defaultFormat" value="#{T(org.geoserver.wms.mvt.MVT).MIME_TYPE}"/>
+  </bean>
+
+  <bean id="slippyMapHandlerMapping"
+        class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
+    <property name="order" value="100"/>
+    <property name="alwaysUseFullPath" value="true"/>
+    <property name="mappings">
+      <props>
+        <prop key="/slippymap/**">slippyTilesController</prop>
+      </props>
+    </property>
+  </bean>
+</beans>

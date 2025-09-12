@@ -6,18 +6,19 @@ import java.util.HashSet;
 import java.util.Set;
 
 /** MVT constants (mimetype and output formats) */
-interface MVT {
+public interface MVT {
 
-    // #String MIME_TYPE = "application/x-protobuf";
-    String MIME_TYPE = "application/vnd.mapbox-vector-tile";
+    // Custom primary MIME type for this plugin
+    String MIME_TYPE = "";
 
+    // Supported aliases (none of these clash with the official extension)
     Set<String> OUTPUT_FORMATS =
             Collections.unmodifiableSet(
                     new HashSet<>(
                             Arrays.asList(
                                     MIME_TYPE,
-                                    "application/pbf",
-                                    "application/mvt",
-                                    "application/x-protobuf;type=mapbox-vector",
-                                    "application/vnd.mapbox-vector-tile")));
+                                    "application/x-mvt-custom",
+                                    "application/x-mvt-pbf",
+                                    "application/x-protobuf;type=mvt",
+                                    "application/x-mapbox-vector-tile-custom")));
 }
