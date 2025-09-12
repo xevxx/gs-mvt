@@ -26,7 +26,8 @@ If you build older branches, match the GeoServer/GeoTools API split (org.geotool
 
 ## Build
 ``` # Java 17 on PATH
-mvn -V -DskipTests clean package ```
+mvn -V -DskipTests clean package
+```
 If Spotless fails with a formatter warning, ensure google-java-format is the expected version in the POM.
 On Windows, if .spotless-index appears, ignore it (add to .gitignore).
 
@@ -39,7 +40,8 @@ By default we advertise the standard MVT type:
 application/vnd.mapbox-vector-tile
 
 If you’re running GeoServer’s stock VectorTiles plugin and want to avoid conflicts, you can switch to a custom type in org.geoserver.wms.mvt.MVT:
-```public interface MVT {
+```
+public interface MVT {
     String MIME_TYPE = "application/x-mvt-custom";
     Set<String> OUTPUT_FORMATS = java.util.Collections.unmodifiableSet(
         new java.util.HashSet<>(java.util.Arrays.asList(
@@ -136,12 +138,12 @@ Placeholders not appearing
 Ensure small_geom_mode=pixel and your small_geom_threshold is large enough to classify features as “small”.
 In pixel mode the encoder’s drop threshold is disabled internally so placeholders won’t be pruned.
 
-Tests
+## Tests
 
 SlippyTilesControllerTest asserts that a slippy request forwards to the correct WMS URL and that responses match byte-for-byte.
 If you change defaults (MIME/tileSize), update the Spring bean and the test expectations accordingly.
 
-License
+## License
 
 Same as upstream project. See LICENSE in the repo.
 
