@@ -1,3 +1,152 @@
+### GeoServer MVT Extension (enhanced)
+## Overview
+
+This extension adds Mapbox Vector Tiles (MVT) output to GeoServer WMS and provides a Slippy Map endpoint that forwards to WMS.
+Tiles render nicely in WebGL clients such as MapLibre GL JS and Mapbox GL JS.
+
+# Highlights vs. upstream:
+
+Small geometry handling: small_geom_mode=drop|pixel|keep with pixel_size and PIXEL_AS_POINT options.
+
+Attribute stripping: strip_attributes=true (with optional keep_attrs=name1,name2 whitelist).
+
+Custom MIME (optional) so you don’t collide with GeoServer’s stock VectorTiles output.
+
+Slippy Tiles controller restored and Spring-wired; unit test included.
+
+# Compatibility
+
+GeoServer: 2.24+ (developed/tested with 2.26.x)
+
+Java: 17 (Eclipse Adoptium / Temurin recommended)
+
+Maven: 3.8+ (tested with 3.9.x)
+
+If you build older branches, match the GeoServer/GeoTools API split (org.geotools.api.*).
+
+# Build
+``` # Java 17 on PATH
+mvn -V -DskipTests clean package ```
+If Spotless fails with a formatter warning, ensure google-java-format is the expected version in the POM.
+On Windows, if .spotless-index appears, ignore it (add to .gitignore).
+
+The build produces a JAR in target/. Drop it into $GEOSERVER_WEBAPP/WEB-INF/lib and restart.
+
+# Output Formats / MIME Types
+
+By default we advertise the standard MVT type:
+
+application/vnd.mapbox-vector-tile
+
+If you’re running GeoServer’s stock VectorTiles plugin and want to avoid conflicts, you can switch to a custom type in org.geoserver.wms.mvt.MVT:
+```public interface MVT {
+    String MIME_TYPE = "application/x-mvt-custom";
+    Set<String> OUTPUT_FORMATS = java.util.Collections.unmodifiableSet(
+        new java.util.HashSet<>(java.util.Arrays.asList(
+            MIME_TYPE,
+            "application/x-mvt-pbf"
+        )));
+}
+```
+Then request with:
+```
+&format=application/x-mvt-custom
+```
+The plugin registers formats from MVT.OUTPUT_FORMATS, and MVTStreamingMapOutputFormat#getMimeType() returns MVT.MIME_TYPE.
+
+# WMS Usage
+
+Minimal WMS example (change MIME if you chose the custom one):
+```
+/geoserver/wms?
+  SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&
+  LAYERS=workspace:layer&
+  STYLES=&FORMAT=application/vnd.mapbox-vector-tile&
+  SRS=EPSG:3857&WIDTH=256&HEIGHT=256&
+  BBOX=minx,miny,maxx,maxy
+
+```
+
+# ENV parameters (case-insensitive)
+| Key                  | Type    | Default | Description                                                                                                            |   |
+|----------------------|---------|---------|------------------------------------------------------------------------------------------------------------------------|---|
+| gen_level            | enum    | MID     | Generalisation table to use: LOW, MID, HIGH.                                                                           |   |
+| gen_factor           | double  | n/a     | Overrides table. ≤ 0 disables generalisation (no simplification).                                                      |   |
+| small_geom_threshold | double  | 0.05    | In tile units (post-transform). Lines shorter or polygons with smaller area are considered “small”.                    |   |
+| small_geom_mode      | enum    | drop    | What to do with “small” geometries: drop (skip), keep (leave as is), pixel (replace with a 1-pixel placeholder).       |   |
+| pixel_size           | int     | 1       | Size (in display pixels) of the placeholder when small_geom_mode=pixel.                                                |   |
+| PIXEL_AS_POINT       | boolean | false   | If true and small_geom_mode=pixel, collapse any small geom to a single Point at centroid (otherwise: type-preserving). |   |
+| strip_attributes     | boolean | false   | If true, strip attributes from all features (not just placeholders).                                                   |   |
+| keep_attrs           | csv     | n/a     | Comma-separated whitelist of attribute names to keep even when strip_attributes=true.                                  |   |
+| avoid_empty_proto    | boolean | false   | Emit an empty Layer message so tiles are not 0-byte (helps some caches).                                               |   |
+
+# Notes
+
+When small_geom_mode=pixel, the encoder’s internal skipping threshold is automatically neutralized to avoid dropping placeholders. Detection still uses your small_geom_threshold.
+
+Placeholders:
+
+Polygons → either a 1×1 tile-unit square or a Point (if PIXEL_AS_POINT=true).
+
+Lines → short dash centered at centroid or Point (with PIXEL_AS_POINT=true).
+
+Points → unchanged.
+
+# Slippy Maps - advice unchanged but had to wire up differently to stop it interfering with geoserver rest
+
+Spring wiring
+
+src/main/resources/applicationContext-slippymap.xml (already included) enables the controller:
+```
+<mvc:annotation-driven/>
+<context:component-scan base-package="org.geoserver.slippymap"/>
+
+<bean id="slippyTilesController" class="org.geoserver.slippymap.SlippyTilesController">
+  <property name="defaultBuffer" value="10"/>
+  <property name="defaultFormat" value="application/vnd.mapbox-vector-tile"/>
+  <property name="defaultStyles" value=""/>
+  <property name="supportedOutputFormats">
+    <map>
+      <entry key="pbf" value="application/vnd.mapbox-vector-tile"/>
+    </map>
+  </property>
+  <property name="defaultTileSize">
+    <map>
+      <entry key="pbf" value="256"/>
+    </map>
+  </property>
+</bean>
+
+```
+If you switched to the custom MIME, set both defaultFormat and the pbf entry to application/x-mvt-custom.
+Ensure org.geoserver.wms.mvt.MVT is public if you reference constants from Spring or other packages.
+
+# Troubleshooting
+
+Tiles same size at all zooms
+You likely send attributes; use ENV=strip_attributes:true (and optional keep_attrs) to drop them.
+
+Grid seams at tile joins
+Use small_geom_mode=pixel (placeholders), or keep attributes minimal.
+
+0-byte tiles break cache
+Use ENV=avoid_empty_proto:true.
+
+Placeholders not appearing
+Ensure small_geom_mode=pixel and your small_geom_threshold is large enough to classify features as “small”.
+In pixel mode the encoder’s drop threshold is disabled internally so placeholders won’t be pruned.
+
+Tests
+
+SlippyTilesControllerTest asserts that a slippy request forwards to the correct WMS URL and that responses match byte-for-byte.
+If you change defaults (MIME/tileSize), update the Spring bean and the test expectations accordingly.
+
+License
+
+Same as upstream project. See LICENSE in the repo.
+
+# Previous Info Below
+
 # Geoserver MVT Extension
 
 ## Overview
