@@ -1,10 +1,10 @@
-### GeoServer MVT Extension (enhanced)
+# GeoServer MVT Extension (enhanced)
 ## Overview
 
 This extension adds Mapbox Vector Tiles (MVT) output to GeoServer WMS and provides a Slippy Map endpoint that forwards to WMS.
 Tiles render nicely in WebGL clients such as MapLibre GL JS and Mapbox GL JS.
 
-# Highlights vs. upstream:
+## Highlights vs. upstream:
 
 Small geometry handling: small_geom_mode=drop|pixel|keep with pixel_size and PIXEL_AS_POINT options.
 
@@ -14,7 +14,7 @@ Custom MIME (optional) so you don’t collide with GeoServer’s stock VectorTil
 
 Slippy Tiles controller restored and Spring-wired; unit test included.
 
-# Compatibility
+## Compatibility
 
 GeoServer: 2.24+ (developed/tested with 2.26.x)
 
@@ -24,7 +24,7 @@ Maven: 3.8+ (tested with 3.9.x)
 
 If you build older branches, match the GeoServer/GeoTools API split (org.geotools.api.*).
 
-# Build
+## Build
 ``` # Java 17 on PATH
 mvn -V -DskipTests clean package ```
 If Spotless fails with a formatter warning, ensure google-java-format is the expected version in the POM.
@@ -54,7 +54,7 @@ Then request with:
 ```
 The plugin registers formats from MVT.OUTPUT_FORMATS, and MVTStreamingMapOutputFormat#getMimeType() returns MVT.MIME_TYPE.
 
-# WMS Usage
+## WMS Usage
 
 Minimal WMS example (change MIME if you chose the custom one):
 ```
@@ -67,7 +67,7 @@ Minimal WMS example (change MIME if you chose the custom one):
 
 ```
 
-# ENV parameters (case-insensitive)
+## ENV parameters (case-insensitive)
 | Key                  | Type    | Default | Description                                                                                                            |   |
 |----------------------|---------|---------|------------------------------------------------------------------------------------------------------------------------|---|
 | gen_level            | enum    | MID     | Generalisation table to use: LOW, MID, HIGH.                                                                           |   |
@@ -80,7 +80,7 @@ Minimal WMS example (change MIME if you chose the custom one):
 | keep_attrs           | csv     | n/a     | Comma-separated whitelist of attribute names to keep even when strip_attributes=true.                                  |   |
 | avoid_empty_proto    | boolean | false   | Emit an empty Layer message so tiles are not 0-byte (helps some caches).                                               |   |
 
-# Notes
+## Notes
 
 When small_geom_mode=pixel, the encoder’s internal skipping threshold is automatically neutralized to avoid dropping placeholders. Detection still uses your small_geom_threshold.
 
@@ -92,7 +92,7 @@ Lines → short dash centered at centroid or Point (with PIXEL_AS_POINT=true).
 
 Points → unchanged.
 
-# Slippy Maps - advice unchanged but had to wire up differently to stop it interfering with geoserver rest
+## Slippy Maps - advice unchanged but had to wire up differently to stop it interfering with geoserver rest
 
 Spring wiring
 
@@ -121,7 +121,7 @@ src/main/resources/applicationContext-slippymap.xml (already included) enables t
 If you switched to the custom MIME, set both defaultFormat and the pbf entry to application/x-mvt-custom.
 Ensure org.geoserver.wms.mvt.MVT is public if you reference constants from Spring or other packages.
 
-# Troubleshooting
+## Troubleshooting
 
 Tiles same size at all zooms
 You likely send attributes; use ENV=strip_attributes:true (and optional keep_attrs) to drop them.
