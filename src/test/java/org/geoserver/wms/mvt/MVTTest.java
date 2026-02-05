@@ -18,40 +18,7 @@ public class MVTTest extends AbstractMVTTest {
     @Ignore
     // TODO: fix me, reference pbf has to be fixed?
     public void testBasicMvtGeneratorWithStyle() throws Exception {
-        MockHttpServletResponse response =
-                getAsServletResponse(
-                        "wms?request=getmap&service=wms&version=1.1.1"
-                                + "&format="
-                                + MVT.MIME_TYPE
-                                + "&layers="
-                                + TEST_LINES.getPrefix()
-                                + ":"
-                                + TEST_LINES.getLocalPart()
-                                + ","
-                                + TEST_POINTS.getPrefix()
-                                + ":"
-                                + TEST_POINTS.getLocalPart()
-                                + ","
-                                + TEST_POLYGONS.getPrefix()
-                                + ":"
-                                + TEST_POLYGONS.getLocalPart()
-                                + "&styles="
-                                + STYLE_NAME
-                                + ","
-                                + STYLE_NAME
-                                + ","
-                                + STYLE_NAME
-                                + "&height=256&width=256&bbox=1448023.063834379,6066042.5647115875,1457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10");
-        InputStream inputStream = this.getClass().getResourceAsStream("test_result.pbf");
-        byte[] inputBytes = IOUtils.toByteArray(inputStream);
-        byte[] content = response.getContentAsByteArray();
-        Assert.assertEquals(inputBytes.length, content.length);
-        IOUtils.closeQuietly(inputStream);
-    }
-
-    @Test
-    public void testBasicMvtGeneratorWithCustomGeneralisation() throws Exception {
-        String request =
+        MockHttpServletResponse response = getAsServletResponse(
                 "wms?request=getmap&service=wms&version=1.1.1"
                         + "&format="
                         + MVT.MIME_TYPE
@@ -73,16 +40,46 @@ public class MVTTest extends AbstractMVTTest {
                         + STYLE_NAME
                         + ","
                         + STYLE_NAME
-                        + "&height=256&width=256"
-                        + "&bbox=1448023.063834379,6066042.5647115875,1457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10";
+                        + "&height=256&width=256&bbox=1448023.063834379,6066042.5647115875,1457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10");
+        InputStream inputStream = this.getClass().getResourceAsStream("test_result.pbf");
+        byte[] inputBytes = IOUtils.toByteArray(inputStream);
+        byte[] content = response.getContentAsByteArray();
+        Assert.assertEquals(inputBytes.length, content.length);
+        IOUtils.closeQuietly(inputStream);
+    }
+
+    @Test
+    public void testBasicMvtGeneratorWithCustomGeneralisation() throws Exception {
+        String request = "wms?request=getmap&service=wms&version=1.1.1"
+                + "&format="
+                + MVT.MIME_TYPE
+                + "&layers="
+                + TEST_LINES.getPrefix()
+                + ":"
+                + TEST_LINES.getLocalPart()
+                + ","
+                + TEST_POINTS.getPrefix()
+                + ":"
+                + TEST_POINTS.getLocalPart()
+                + ","
+                + TEST_POLYGONS.getPrefix()
+                + ":"
+                + TEST_POLYGONS.getLocalPart()
+                + "&styles="
+                + STYLE_NAME
+                + ","
+                + STYLE_NAME
+                + ","
+                + STYLE_NAME
+                + "&height=256&width=256"
+                + "&bbox=1448023.063834379,6066042.5647115875,1457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10";
 
         // map with gen_level (MID) to 0.4
         String defaultRequest = request + "&env=" + PARAM_SMALL_GEOM_THRESHOLD + ":-1";
         MockHttpServletResponse responseDefault = getAsServletResponse(defaultRequest);
 
         //        String request0005 = request + "&env=gen_factor:0.005";
-        String request0005 =
-                request + "&env=gen_factor:0.005;" + PARAM_SMALL_GEOM_THRESHOLD + ":-1";
+        String request0005 = request + "&env=gen_factor:0.005;" + PARAM_SMALL_GEOM_THRESHOLD + ":-1";
         MockHttpServletResponse response0005 = getAsServletResponse(request0005);
 
         //        String request05 = request + "&env=gen_factor:0.5";
@@ -125,30 +122,29 @@ public class MVTTest extends AbstractMVTTest {
 
     @Test
     public void testBasicMvtGeneratorSkipSmallGeoms() throws Exception {
-        String request =
-                "wms?request=getmap&service=wms&version=1.1.1"
-                        + "&format="
-                        + MVT.MIME_TYPE
-                        + "&layers="
-                        + TEST_LINES.getPrefix()
-                        + ":"
-                        + TEST_LINES.getLocalPart()
-                        + ","
-                        + TEST_POINTS.getPrefix()
-                        + ":"
-                        + TEST_POINTS.getLocalPart()
-                        + ","
-                        + TEST_POLYGONS.getPrefix()
-                        + ":"
-                        + TEST_POLYGONS.getLocalPart()
-                        + "&styles="
-                        + STYLE_NAME
-                        + ","
-                        + STYLE_NAME
-                        + ","
-                        + STYLE_NAME
-                        + "&height=256&width=256"
-                        + "&bbox=1448023.063834379,6066042.5647115875,1457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10";
+        String request = "wms?request=getmap&service=wms&version=1.1.1"
+                + "&format="
+                + MVT.MIME_TYPE
+                + "&layers="
+                + TEST_LINES.getPrefix()
+                + ":"
+                + TEST_LINES.getLocalPart()
+                + ","
+                + TEST_POINTS.getPrefix()
+                + ":"
+                + TEST_POINTS.getLocalPart()
+                + ","
+                + TEST_POLYGONS.getPrefix()
+                + ":"
+                + TEST_POLYGONS.getLocalPart()
+                + "&styles="
+                + STYLE_NAME
+                + ","
+                + STYLE_NAME
+                + ","
+                + STYLE_NAME
+                + "&height=256&width=256"
+                + "&bbox=1448023.063834379,6066042.5647115875,1457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10";
 
         MockHttpServletResponse responseDefault = getAsServletResponse(request);
 
@@ -170,18 +166,17 @@ public class MVTTest extends AbstractMVTTest {
 
     @Test
     public void testEmptyResponseBehavior() throws Exception {
-        String request =
-                "wms?request=getmap&service=wms&version=1.1.1"
-                        + "&format="
-                        + MVT.MIME_TYPE
-                        + "&layers="
-                        + TEST_POLYGONS.getPrefix()
-                        + ":"
-                        + TEST_POLYGONS.getLocalPart()
-                        + "&styles="
-                        + STYLE_NAME
-                        + "&height=256&width=256"
-                        + "&bbox=1448023.063834379,6066042.5647115875,1457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10";
+        String request = "wms?request=getmap&service=wms&version=1.1.1"
+                + "&format="
+                + MVT.MIME_TYPE
+                + "&layers="
+                + TEST_POLYGONS.getPrefix()
+                + ":"
+                + TEST_POLYGONS.getLocalPart()
+                + "&styles="
+                + STYLE_NAME
+                + "&height=256&width=256"
+                + "&bbox=1448023.063834379,6066042.5647115875,1457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10";
 
         String requestEmpty = request + "&env=" + PARAM_SMALL_GEOM_THRESHOLD + ":1.000";
         MockHttpServletResponse responseEmpty = getAsServletResponse(requestEmpty);
@@ -192,12 +187,7 @@ public class MVTTest extends AbstractMVTTest {
         Assert.assertEquals(0, contentEmpty.length);
 
         String requestNotEmpty =
-                request
-                        + "&env="
-                        + PARAM_SMALL_GEOM_THRESHOLD
-                        + ":1.000;"
-                        + AVOID_EMPTY_PROTO
-                        + ":true";
+                request + "&env=" + PARAM_SMALL_GEOM_THRESHOLD + ":1.000;" + AVOID_EMPTY_PROTO + ":true";
         MockHttpServletResponse responseNotEmpty = getAsServletResponse(requestNotEmpty);
 
         byte[] contentNotEmpty = responseNotEmpty.getContentAsByteArray();
@@ -207,18 +197,17 @@ public class MVTTest extends AbstractMVTTest {
 
         // if datastore already doesn´t provide any features, behaviour should also add layer
         // (request requests with bounds outside present data)
-        request =
-                "wms?request=getmap&service=wms&version=1.1.1"
-                        + "&format="
-                        + MVT.MIME_TYPE
-                        + "&layers="
-                        + TEST_POLYGONS.getPrefix()
-                        + ":"
-                        + TEST_POLYGONS.getLocalPart()
-                        + "&styles="
-                        + STYLE_NAME
-                        + "&height=256&width=256"
-                        + "&bbox=2448023.063834379,6066042.5647115875,2457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10";
+        request = "wms?request=getmap&service=wms&version=1.1.1"
+                + "&format="
+                + MVT.MIME_TYPE
+                + "&layers="
+                + TEST_POLYGONS.getPrefix()
+                + ":"
+                + TEST_POLYGONS.getLocalPart()
+                + "&styles="
+                + STYLE_NAME
+                + "&height=256&width=256"
+                + "&bbox=2448023.063834379,6066042.5647115875,2457807.0034548815,6075826.50433209&srs=EPSG:3857&buffer=10";
 
         responseEmpty = getAsServletResponse(requestEmpty);
 

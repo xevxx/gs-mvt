@@ -55,26 +55,25 @@ public class SlippyTilesControllerTest extends AbstractMVTTest {
         int buffer = 10;
 
         // 1) Hit slippymap endpoint
-        String requestSlippy =
-                "/slippymap/"
-                        + TEST_LINES.getPrefix()
-                        + ":"
-                        + TEST_LINES.getLocalPart()
-                        + "/"
-                        + z
-                        + "/"
-                        + x
-                        + "/"
-                        + y
-                        + ".pbf"
-                        + "?buffer="
-                        + buffer
-                        + "&styles="
-                        + STYLE_NAME
-                        + "&tileSize=256"
-                        + "&gen_level=low"
-                        + "&bboxToBoundsViewparam=true"
-                        + "&viewparams=test123:test123;";
+        String requestSlippy = "/slippymap/"
+                + TEST_LINES.getPrefix()
+                + ":"
+                + TEST_LINES.getLocalPart()
+                + "/"
+                + z
+                + "/"
+                + x
+                + "/"
+                + y
+                + ".pbf"
+                + "?buffer="
+                + buffer
+                + "&styles="
+                + STYLE_NAME
+                + "&tileSize=256"
+                + "&gen_level=low"
+                + "&bboxToBoundsViewparam=true"
+                + "&viewparams=test123:test123;";
 
         MockHttpServletResponse responseSlippy = getAsServletResponse(requestSlippy);
         Assert.assertEquals(200, responseSlippy.getStatus());
@@ -91,34 +90,25 @@ public class SlippyTilesControllerTest extends AbstractMVTTest {
         // sanity: recompute bbox independently (like original test did), but we’ll still use the
         // controller’s FORMAT / VIEWPARAMS to avoid mismatches
         ReferencedEnvelope bbox = SlippyMapTileCalculator.tile2boundingBox(x, y, z, 3857);
-        String bboxSb =
-                "&bbox="
-                        + bbox.getMinX()
-                        + ","
-                        + bbox.getMinY()
-                        + ","
-                        + bbox.getMaxX()
-                        + ","
-                        + bbox.getMaxY();
+        String bboxSb = "&bbox=" + bbox.getMinX() + "," + bbox.getMinY() + "," + bbox.getMaxX() + "," + bbox.getMaxY();
 
-        String requestWms =
-                "wms?request=getmap&service=wms&version=1.1.1"
-                        + "&format="
-                        + findParam(qp, "FORMAT")
-                        + "&layers="
-                        + findParam(qp, "LAYERS")
-                        + "&styles="
-                        + findParam(qp, "STYLES")
-                        + "&height="
-                        + findParam(qp, "HEIGHT")
-                        + "&width="
-                        + findParam(qp, "WIDTH")
-                        // use the independently computed bbox (should match the controller one)
-                        + bboxSb
-                        + "&srs="
-                        + findParam(qp, "SRS")
-                        + "&buffer="
-                        + findParam(qp, "BUFFER");
+        String requestWms = "wms?request=getmap&service=wms&version=1.1.1"
+                + "&format="
+                + findParam(qp, "FORMAT")
+                + "&layers="
+                + findParam(qp, "LAYERS")
+                + "&styles="
+                + findParam(qp, "STYLES")
+                + "&height="
+                + findParam(qp, "HEIGHT")
+                + "&width="
+                + findParam(qp, "WIDTH")
+                // use the independently computed bbox (should match the controller one)
+                + bboxSb
+                + "&srs="
+                + findParam(qp, "SRS")
+                + "&buffer="
+                + findParam(qp, "BUFFER");
 
         String env = findParam(qp, "ENV");
         if (env != null) requestWms += "&ENV=" + env;

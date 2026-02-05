@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
+import javax.annotation.PostConstruct;
 import org.apache.commons.lang.math.NumberUtils;
 import org.geoserver.platform.Operation;
 import org.geoserver.platform.ServiceException;
@@ -25,9 +26,7 @@ import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 
-/**
- * The Streaming Map Response using the StreamingMVTMap for retrieving and encoding the features.
- */
+/** The Streaming Map Response using the StreamingMVTMap for retrieving and encoding the features. */
 public class MVTStreamingMapResponse extends AbstractMapResponse {
 
     private static final Logger LOGGER = Logging.getLogger(MVTStreamingMapResponse.class);
@@ -47,6 +46,10 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
     private GeneralisationLevel defaultGenLevel;
     private Map<GeneralisationLevel, Map<Integer, Double>> generalisationTables;
 
+    @PostConstruct
+    public void init() {
+        System.err.println("gs-mvt: MVTStreamingMapResponse bean created");
+    }
     // Mode enum we pass to StreamingMVTMap
     public enum SmallGeomMode {
         DROP,
@@ -59,9 +62,13 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
     }
 
     @Override
-    public void write(Object value, OutputStream output, Operation operation)
-            throws IOException, ServiceException {
+    public String getMimeType(Object value, Operation operation) {
+        return MVT.MIME_TYPE;
+    }
 
+    @Override
+    public void write(Object value, OutputStream output, Operation operation) throws IOException, ServiceException {
+        System.err.println("gs-mvt: MapResponse.write HIT");
         StreamingMVTMap map = (StreamingMVTMap) value;
 
         Double genFactor = null;
@@ -86,11 +93,8 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
             Object reqGenFactor = env.get(PARAM_GENERALISATION_FACTOR); // keys are already lower
             Object reqGenLevel = env.get(PARAM_GENERALISATION_LEVEL);
 
-            if (reqGenFactor != null
-                    && reqGenFactor instanceof String
-                    && NumberUtils.isNumber((String) reqGenFactor)) {
-                genFactor =
-                        NumberUtils.toDouble((String) reqGenFactor, DEFAULT_GENERALISATION_FACTOR);
+            if (reqGenFactor != null && reqGenFactor instanceof String && NumberUtils.isNumber((String) reqGenFactor)) {
+                genFactor = NumberUtils.toDouble((String) reqGenFactor, DEFAULT_GENERALISATION_FACTOR);
             } else if (reqGenLevel != null) {
                 genFactorTable = getGenFactorForRequestedLevel(reqGenLevel);
             }
@@ -99,9 +103,7 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
             Object reqSkipSmallGeoms = env.get(PARAM_SMALL_GEOM_THRESHOLD);
             if (reqSkipSmallGeoms != null) {
                 smallGeometryThreshold =
-                        NumberUtils.toDouble(
-                                String.valueOf(reqSkipSmallGeoms),
-                                DEFAULT_SMALL_GEOMETRY_THRESHOLD);
+                        NumberUtils.toDouble(String.valueOf(reqSkipSmallGeoms), DEFAULT_SMALL_GEOMETRY_THRESHOLD);
             }
 
             // existing: avoid empty proto
@@ -117,20 +119,25 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
             if (modeVal != null) smallGeomMode = String.valueOf(modeVal).trim().toLowerCase();
 
             // optional: quick debug
-            LOGGER.fine(
-                    "MVT ENV -> mode="
-                            + smallGeomMode
-                            + ", requested_threshold="
-                            + DEFAULT_SMALL_GEOMETRY_THRESHOLD
-                            + ", effective_threshold="
-                            + smallGeometryThreshold);
+            LOGGER.fine("MVT ENV -> mode="
+                    + smallGeomMode
+                    + ", requested_threshold="
+                    + DEFAULT_SMALL_GEOMETRY_THRESHOLD
+                    + ", effective_threshold="
+                    + smallGeometryThreshold);
 
             Set<String> keepAttrs = new LinkedHashSet<>();
-            Object keepEnv = request.getEnv().get("KEEP_ATTRS");
+            Map<String, Object> envKeep = request.getEnv();
+            Object keepEnv = envKeep.containsKey("KEEP_ATTRS") ? envKeep.get("KEEP_ATTRS") : envKeep.get("keep_attrs");
             if (keepEnv != null) {
-                for (String k : keepEnv.toString().split(",")) {
-                    if (!k.trim().isEmpty()) keepAttrs.add(k.trim());
+                // Decode URL-encoded commas/colons first
+                String decoded =
+                        java.net.URLDecoder.decode(keepEnv.toString(), java.nio.charset.StandardCharsets.UTF_8);
+                for (String k : decoded.split(",")) {
+                    String name = k.trim();
+                    if (!name.isEmpty()) keepAttrs.add(name);
                 }
+                LOGGER.info("Decoded KEEP_ATTRS = " + keepAttrs);
             }
         }
 
@@ -140,11 +147,7 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
                 map.encode(output, avoidEmptyProto, smallGeometryThreshold, genFactor);
             } else {
                 map.encode(
-                        output,
-                        avoidEmptyProto,
-                        smallGeometryThreshold,
-                        genFactorTable,
-                        DEFAULT_GENERALISATION_FACTOR);
+                        output, avoidEmptyProto, smallGeometryThreshold, genFactorTable, DEFAULT_GENERALISATION_FACTOR);
             }
         } finally {
             map.dispose();
@@ -174,14 +177,11 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
         // --- Handle non-enum "MIN" / "MAX" first
         if ("MIN".equals(key)) {
             Map<Integer, Double> low = generalisationTables.get(GeneralisationLevel.LOW);
-            return scaleTable(
-                    low, 0.5); // tune factor as you like (e.g., 0.5 = less simplification than LOW)
+            return scaleTable(low, 0.5); // tune factor as you like (e.g., 0.5 = less simplification than LOW)
         }
         if ("MAX".equals(key)) {
             Map<Integer, Double> high = generalisationTables.get(GeneralisationLevel.HIGH);
-            return scaleTable(
-                    high,
-                    1.5); // tune factor as you like (e.g., 1.5 = more simplification than HIGH)
+            return scaleTable(high, 1.5); // tune factor as you like (e.g., 1.5 = more simplification than HIGH)
         }
 
         // --- Fallback to the enum levels
@@ -189,13 +189,12 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
         try {
             genLevel = GeneralisationLevel.valueOf(key);
         } catch (IllegalArgumentException e) {
-            LOGGER.warning(
-                    "requested generalisation level '"
-                            + reqGenLevel
-                            + "' is not valid (use 'min', 'low', 'mid', 'high', 'max'). "
-                            + "Default generalisation level ("
-                            + defaultGenLevel
-                            + ") will be used.");
+            LOGGER.warning("requested generalisation level '"
+                    + reqGenLevel
+                    + "' is not valid (use 'min', 'low', 'mid', 'high', 'max'). "
+                    + "Default generalisation level ("
+                    + defaultGenLevel
+                    + ") will be used.");
             genLevel = defaultGenLevel;
         }
         return getGenFactorForGenLevel(genLevel);
@@ -223,8 +222,7 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
         return generalisationTables;
     }
 
-    public void setGeneralisationTables(
-            Map<GeneralisationLevel, Map<Integer, Double>> generalisationTables) {
+    public void setGeneralisationTables(Map<GeneralisationLevel, Map<Integer, Double>> generalisationTables) {
         this.generalisationTables = generalisationTables;
     }
 
@@ -283,8 +281,7 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
         return worldHeight / (double) req.getHeight(); // map units per pixel
     }
 
-    private Geometry placeholderSameKind(
-            Geometry original, GetMapRequest req, int pixelPx, GeometryFactory gf) {
+    private Geometry placeholderSameKind(Geometry original, GetMapRequest req, int pixelPx, GeometryFactory gf) {
         // center at centroid (already in map CRS at this stage)
         Coordinate c = original.getCentroid().getCoordinate();
         double halfX = 0.5 * pixelPx * pixelSizeWorldX(req);
@@ -292,14 +289,13 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
 
         if (original instanceof Polygon || original instanceof MultiPolygon) {
             // Tiny axis-aligned square polygon (closed ring)
-            Coordinate[] ring =
-                    new Coordinate[] {
-                        new Coordinate(c.x - halfX, c.y - halfY),
-                        new Coordinate(c.x + halfX, c.y - halfY),
-                        new Coordinate(c.x + halfX, c.y + halfY),
-                        new Coordinate(c.x - halfX, c.y + halfY),
-                        new Coordinate(c.x - halfX, c.y - halfY)
-                    };
+            Coordinate[] ring = new Coordinate[] {
+                new Coordinate(c.x - halfX, c.y - halfY),
+                new Coordinate(c.x + halfX, c.y - halfY),
+                new Coordinate(c.x + halfX, c.y + halfY),
+                new Coordinate(c.x - halfX, c.y + halfY),
+                new Coordinate(c.x - halfX, c.y - halfY)
+            };
             LinearRing shell = gf.createLinearRing(ring);
             Polygon poly = gf.createPolygon(shell, null);
             if (original instanceof MultiPolygon) {

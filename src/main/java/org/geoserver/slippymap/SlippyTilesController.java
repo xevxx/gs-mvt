@@ -23,17 +23,16 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.Controller;
 
 /**
- * Slippy Map Tiles controller that converts /slippymap/{layers}/{z}/{x}/{y}.{ext} into a WMS GetMap
- * forward, so WMS security and output formats are reused.
+ * Slippy Map Tiles controller that converts /slippymap/{layers}/{z}/{x}/{y}.{ext} into a WMS GetMap forward, so WMS
+ * security and output formats are reused.
  *
- * <p>This version is annotation-free to avoid requiring <mvc:annotation-driven/>, which can
- * interfere with GeoServer REST mappings.
+ * <p>This version is annotation-free to avoid requiring <mvc:annotation-driven/>, which can interfere with GeoServer
+ * REST mappings.
  */
 public class SlippyTilesController implements Controller {
 
     private int defaultBuffer = 10;
-    private String defaultFormat =
-            org.geoserver.wms.mvt.MVT.MIME_TYPE; // e.g. application/x-mvt-custom
+    private String defaultFormat = org.geoserver.wms.mvt.MVT.MIME_TYPE; // e.g. application/x-mvt-custom
     private String defaultStyles = "";
 
     /** Mapping of file extensions (e.g. "pbf") to MIME types (e.g. application/x-mvt-custom). */
@@ -89,9 +88,7 @@ public class SlippyTilesController implements Controller {
         String sld_body = request.getParameter("sld_body");
         String cql_filter = request.getParameter("cql_filter");
         boolean bboxToBoundsViewparam =
-                "true"
-                        .equalsIgnoreCase(
-                                opt(request.getParameter("bboxToBoundsViewparam"), "false"));
+                "true".equalsIgnoreCase(opt(request.getParameter("bboxToBoundsViewparam"), "false"));
         String viewParams = request.getParameter("viewparams");
 
         // ENV parameters (plain strings)
@@ -116,16 +113,12 @@ public class SlippyTilesController implements Controller {
                 .append(
                         tileSize != null
                                 ? tileSize
-                                : (defaultTileSize != null
-                                        ? defaultTileSize.getOrDefault(ext, "256")
-                                        : "256"));
+                                : (defaultTileSize != null ? defaultTileSize.getOrDefault(ext, "256") : "256"));
         sb.append("&height=")
                 .append(
                         tileSize != null
                                 ? tileSize
-                                : (defaultTileSize != null
-                                        ? defaultTileSize.getOrDefault(ext, "256")
-                                        : "256"));
+                                : (defaultTileSize != null ? defaultTileSize.getOrDefault(ext, "256") : "256"));
         sb.append("&srs=").append(getCRSIdentifier(bbox.getCoordinateReferenceSystem()));
         sb.append("&bbox=")
                 .append(bbox.getMinX())
@@ -146,8 +139,7 @@ public class SlippyTilesController implements Controller {
         StringBuilder env = new StringBuilder();
         if (gen_factor != null) appendEnv(env, PARAM_GENERALISATION_FACTOR, gen_factor);
         if (gen_level != null) appendEnv(env, PARAM_GENERALISATION_LEVEL, gen_level);
-        if (small_geom_threshold != null)
-            appendEnv(env, PARAM_SMALL_GEOM_THRESHOLD, small_geom_threshold);
+        if (small_geom_threshold != null) appendEnv(env, PARAM_SMALL_GEOM_THRESHOLD, small_geom_threshold);
         if (avoid_empty_proto != null) appendEnv(env, AVOID_EMPTY_PROTO, avoid_empty_proto);
         if (env.length() > 0) sb.append("&env=").append(urlEncode(env.toString()));
 
@@ -164,8 +156,7 @@ public class SlippyTilesController implements Controller {
             sb.append(buildBoundsViewparam(bbox)); // encoded block appended
         }
 
-        RequestDispatcher dispatcher =
-                request.getRequestDispatcher(response.encodeRedirectURL(sb.toString()));
+        RequestDispatcher dispatcher = request.getRequestDispatcher(response.encodeRedirectURL(sb.toString()));
         dispatcher.forward(request, response);
         return null;
     }
@@ -198,8 +189,7 @@ public class SlippyTilesController implements Controller {
         env.append(key).append(':').append(value);
     }
 
-    private String buildBoundsViewparam(ReferencedEnvelope bbox)
-            throws UnsupportedEncodingException {
+    private String buildBoundsViewparam(ReferencedEnvelope bbox) throws UnsupportedEncodingException {
         Polygon poly = JTS.toGeometry(bbox);
         String boundsWKT = "bounds:'" + poly.toText() + "';"; // e.g. bounds:'POLYGON(...)';
         boundsWKT = boundsWKT.replaceAll(", ", "|");

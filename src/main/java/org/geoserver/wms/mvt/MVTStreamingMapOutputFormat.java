@@ -3,6 +3,7 @@ package org.geoserver.wms.mvt;
 import java.io.IOException;
 import java.util.Set;
 import java.util.logging.Logger;
+import javax.annotation.PostConstruct;
 import org.geoserver.platform.ServiceException;
 import org.geoserver.wms.GetMapOutputFormat;
 import org.geoserver.wms.MapProducerCapabilities;
@@ -27,6 +28,10 @@ public class MVTStreamingMapOutputFormat implements GetMapOutputFormat {
         return MVT.OUTPUT_FORMATS;
     }
 
+    @PostConstruct
+    public void init() {
+        System.err.println("gs-mvt: MVTStreamingMapOutputFormat bean created");
+    }
     /**
      * @return {@code "application/x-protobuf"}
      * @see org.geoserver.wms.GetMapOutputFormat#getMimeType()
@@ -36,8 +41,10 @@ public class MVTStreamingMapOutputFormat implements GetMapOutputFormat {
     }
 
     /** @see org.geoserver.wms.GetMapOutputFormat#produceMap(org.geoserver.wms.WMSMapContent) */
-    public StreamingMVTMap produceMap(WMSMapContent mapContent)
-            throws ServiceException, IOException {
+    public StreamingMVTMap produceMap(WMSMapContent mapContent) throws ServiceException, IOException {
+        LOGGER.info("MVT produceMap HIT; reqFormat="
+                + (mapContent.getRequest() != null ? mapContent.getRequest().getFormat() : "null")
+                + " mime=" + getMimeType());
         StreamingMVTMap mvt = new StreamingMVTMap(mapContent);
         mvt.setMimeType(getMimeType());
         mvt.setContentDispositionHeader(mapContent, ".pbf", false);
