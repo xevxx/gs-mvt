@@ -16,13 +16,15 @@ Slippy Tiles controller restored and Spring-wired; unit test included.
 
 ## Compatibility
 
-GeoServer: 2.24+ (developed/tested with 2.26.x)
+**GeoServer:** 2.24+ (tested with 2.26.x and 2.28.2)
 
-Java: 17 (Eclipse Adoptium / Temurin recommended)
+**Java:** 17 (Eclipse Adoptium / Temurin recommended)
 
-Maven: 3.8+ (tested with 3.9.x)
+**Maven:** 3.8+ (tested with 3.9.x)
 
-If you build older branches, match the GeoServer/GeoTools API split (org.geotools.api.*).
+**Notes:**
+- GeoServer 2.28.x ships an older `protobuf-java` runtime; this extension shades/relocates its protobuf dependency to avoid classpath conflicts.
+- If you build older branches, match the GeoServer/GeoTools API split (`org.geotools.api.*`).
 
 ## Build
 ``` # Java 17 on PATH
