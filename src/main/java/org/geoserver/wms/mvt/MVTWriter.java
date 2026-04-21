@@ -38,13 +38,13 @@ import org.locationtech.jts.geom.Geometry;
  */
 public class MVTWriter {
 
-    static CoordinateReferenceSystem TARGET_CRS;
+    static CoordinateReferenceSystem DEFAULT_TARGET_CRS;
 
     private static final Logger LOGGER = Logging.getLogger(MVTWriter.class);
 
     static {
         try {
-            TARGET_CRS = CRS.decode("EPSG:3857");
+            DEFAULT_TARGET_CRS = CRS.decode("EPSG:3857");
         } catch (FactoryException e) {
             LOGGER.log(Level.WARNING, "CRS could not be created", e);
         }
@@ -58,6 +58,9 @@ public class MVTWriter {
 
     /** The bounding box of the target (tile local) system */
     private final Envelope targetBBOX;
+
+    /** CRS used to query/encode this tile. Defaults to EPSG:3857 when source CRS is unknown. */
+    private final CoordinateReferenceSystem targetCRS;
 
     /** scale in x direction */
     private final double xScale;
@@ -114,11 +117,13 @@ public class MVTWriter {
             double genFactor,
             double smallGeometryThreshold)
             throws FactoryException, TransformException {
-        Envelope targetBBOX = new ReferencedEnvelope(0, tileSizeX, 0, tileSizeY, TARGET_CRS);
+        CoordinateReferenceSystem targetCRS = sourceCRS != null ? sourceCRS : DEFAULT_TARGET_CRS;
+        Envelope targetBBOX = new ReferencedEnvelope(0, tileSizeX, 0, tileSizeY, targetCRS);
         return new MVTWriter(
                 sourceBBOX,
                 targetBBOX,
                 sourceCRS,
+                targetCRS,
                 buffer,
                 includeLayersOnEmptyFeatureList,
                 genFactor,
@@ -140,8 +145,9 @@ public class MVTWriter {
     public static MVTWriter getInstance(
             Envelope sourceBBOX, CoordinateReferenceSystem sourceCRS, int tileSizeX, int tileSizeY, int buffer)
             throws FactoryException, TransformException {
-        Envelope targetBBOX = new ReferencedEnvelope(0, tileSizeX, 0, tileSizeY, TARGET_CRS);
-        return new MVTWriter(sourceBBOX, targetBBOX, sourceCRS, buffer);
+        CoordinateReferenceSystem targetCRS = sourceCRS != null ? sourceCRS : DEFAULT_TARGET_CRS;
+        Envelope targetBBOX = new ReferencedEnvelope(0, tileSizeX, 0, tileSizeY, targetCRS);
+        return new MVTWriter(sourceBBOX, targetBBOX, sourceCRS, targetCRS, buffer);
     }
 
     /**
@@ -200,32 +206,38 @@ public class MVTWriter {
      * @throws FactoryException
      */
     public ReferencedEnvelope getSourceBBOXWithBuffer() throws TransformException, FactoryException {
-        return new ReferencedEnvelope(this.sourceBBOX, TARGET_CRS);
+        return new ReferencedEnvelope(this.sourceBBOX, this.targetCRS);
+    }
+
+    public CoordinateReferenceSystem getTargetCRS() {
+        return this.targetCRS;
     }
 
     private MVTWriter(
             Envelope sourceBBOX,
             Envelope targetBBOX,
             CoordinateReferenceSystem sourceCRS,
+            CoordinateReferenceSystem targetCRS,
             int bufferSize,
             boolean includeLayersOnEmptyFeatureList,
             double genFactor,
             double smallGeometryThreshold)
             throws TransformException, FactoryException {
+        this.targetCRS = targetCRS != null ? targetCRS : DEFAULT_TARGET_CRS;
         if (sourceBBOX instanceof ReferencedEnvelope) {
-            sourceBBOX = ((ReferencedEnvelope) sourceBBOX).transform(TARGET_CRS, true);
+            sourceBBOX = ((ReferencedEnvelope) sourceBBOX).transform(this.targetCRS, true);
         } else {
-            MathTransform transform = CRS.findMathTransform(sourceCRS, TARGET_CRS);
+            MathTransform transform = CRS.findMathTransform(sourceCRS, this.targetCRS);
             sourceBBOX = JTS.transform(sourceBBOX, transform);
         }
         if (bufferSize > 0) {
-            sourceBBOX = this.getBufferedSourceBBOX(bufferSize, sourceBBOX, targetBBOX, TARGET_CRS);
+            sourceBBOX = this.getBufferedSourceBBOX(bufferSize, sourceBBOX, targetBBOX, this.targetCRS);
             targetBBOX = new ReferencedEnvelope(
                     targetBBOX.getMinX() - bufferSize,
                     targetBBOX.getMaxX() + bufferSize,
                     targetBBOX.getMinY() - bufferSize,
                     targetBBOX.getMaxY() + bufferSize,
-                    TARGET_CRS);
+                    this.targetCRS);
         }
         this.sourceBBOX = sourceBBOX;
         this.targetBBOX = targetBBOX;
@@ -236,18 +248,24 @@ public class MVTWriter {
         this.smallGeometryThreshold = smallGeometryThreshold;
     }
 
-    private MVTWriter(Envelope sourceBBOX, Envelope targetBBOX, CoordinateReferenceSystem sourceCRS, int bufferSize)
+    private MVTWriter(
+            Envelope sourceBBOX,
+            Envelope targetBBOX,
+            CoordinateReferenceSystem sourceCRS,
+            CoordinateReferenceSystem targetCRS,
+            int bufferSize)
             throws TransformException, FactoryException {
-        MathTransform transform = CRS.findMathTransform(sourceCRS, TARGET_CRS);
+        this.targetCRS = targetCRS != null ? targetCRS : DEFAULT_TARGET_CRS;
+        MathTransform transform = CRS.findMathTransform(sourceCRS, this.targetCRS);
         sourceBBOX = JTS.transform(sourceBBOX, transform);
         if (bufferSize > 0) {
-            sourceBBOX = this.getBufferedSourceBBOX(bufferSize, sourceBBOX, targetBBOX, TARGET_CRS);
+            sourceBBOX = this.getBufferedSourceBBOX(bufferSize, sourceBBOX, targetBBOX, this.targetCRS);
             targetBBOX = new ReferencedEnvelope(
                     targetBBOX.getMinX() - bufferSize,
                     targetBBOX.getMaxX() + bufferSize,
                     targetBBOX.getMinY() - bufferSize,
                     targetBBOX.getMaxY() + bufferSize,
-                    TARGET_CRS);
+                    this.targetCRS);
         }
         this.sourceBBOX = sourceBBOX;
         this.targetBBOX = targetBBOX;

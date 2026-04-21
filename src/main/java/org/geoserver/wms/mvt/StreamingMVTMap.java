@@ -190,7 +190,7 @@ public class StreamingMVTMap extends WebMap {
                     }
                 }
 
-                finalQuery.setCoordinateSystemReproject(MVTWriter.TARGET_CRS);
+                finalQuery.setCoordinateSystemReproject(mvtWriter.getTargetCRS());
                 finalQuery.setHints(definitionQuery.getHints());
                 finalQuery.setSortBy(definitionQuery.getSortBy());
                 finalQuery.setStartIndex(definitionQuery.getStartIndex());
