@@ -84,6 +84,49 @@ Minimal WMS example (change MIME if you chose the custom one):
 | keep_attrs           | csv     | n/a     | Comma-separated whitelist of attribute names to keep even when strip_attributes=true.                                  |   |
 | avoid_empty_proto    | boolean | false   | Emit an empty Layer message so tiles are not 0-byte (helps some caches).                                               |   |
 
+## Service configuration (environment/mounted config)
+
+The plugin now reads service-level defaults from environment variables (or an optional mounted properties file) instead of relying on node-local hardcoded values.
+
+Resolution order for service config:
+1. Environment variable
+2. Mounted config file property
+3. Built-in default
+
+Mounted config file support:
+- Env var: `GS_MVT_CONFIG_FILE` (path to a Java `.properties` file)
+- Fallback path (if env var is not set): `/etc/gs-mvt/gs-mvt.properties`
+
+### Required/optional service variables
+
+All variables below are optional (safe defaults exist), but are documented for production deployments.
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `GS_MVT_MIME_TYPE` | `application/x-mvt-custom` | Advertised MVT MIME type used by format registration and slippy defaults. |
+| `GS_MVT_DEFAULT_TILE_SIZE` | `256` | Default slippy tile width/height for `.pbf` when request does not include `tileSize`. |
+| `GS_MVT_TILE_EXTENT` | `256` | Internal tile-local CRS extent used during MVT encoding. |
+| `GS_MVT_DEFAULT_BUFFER` | `10` | Default slippy WMS buffer when request does not set `buffer`. |
+| `GS_MVT_DEFAULT_STYLES` | empty | Default slippy `styles` value. |
+| `GS_MVT_CONFIG_FILE` | unset | Optional mounted properties path for centralized config injection. |
+
+### Example mounted config (`/etc/gs-mvt/gs-mvt.properties`)
+
+```properties
+GS_MVT_MIME_TYPE=application/vnd.mapbox-vector-tile
+GS_MVT_DEFAULT_TILE_SIZE=512
+GS_MVT_TILE_EXTENT=4096
+GS_MVT_DEFAULT_BUFFER=16
+GS_MVT_DEFAULT_STYLES=
+```
+
+## Node-local state audit
+
+- No filesystem temp directories, file locks, or host-local cache files are used by request handling.
+- The encoder/writer lifecycle is per-request/per-tile (`MVTWriter.getInstance(...)`), so geometry/state mutation is not shared across nodes.
+- Service-wide defaults are now environment/provider-driven; request-time behavior continues to be controlled via request `ENV` parameters.
+- Horizontal scaling guidance: keep request handlers stateless and use shared external services (datastore/cache) for cross-node consistency.
+
 ## Notes
 
 When small_geom_mode=pixel, the encoder’s internal skipping threshold is automatically neutralized to avoid dropping placeholders. Detection still uses your small_geom_threshold.

@@ -20,7 +20,7 @@
          <property name="supportedOutputFormats">
              <map>
                  <!--<entry key="pbf" value="application/x-protobuf"/>-->
-				 <entry key="pbf" value="application/vnd.mapbox-vector-tile"/>
+                 <entry key="pbf" value="#{T(org.geoserver.wms.mvt.MVT).MIME_TYPE}"/>
                  <entry key="png" value="image/png"/>
                  <entry key="jpg" value="image/jpg"/>
                  <entry key="gif" value="image/gif"/>
@@ -34,7 +34,7 @@
          </property>
          <property name="defaultTileSize">
              <map>
-                 <entry key="pbf" value="512"/>
+                 <entry key="pbf" value="#{T(org.geoserver.wms.mvt.EnvironmentConfig).getString('GS_MVT_DEFAULT_TILE_SIZE','256')}"/>
                  <entry key="png" value="256"/>
                  <entry key="jpg" value="256"/>
                  <entry key="gif" value="256"/>
