@@ -14,6 +14,11 @@ Custom MIME (optional) so you don’t collide with GeoServer’s stock VectorTil
 
 Slippy Tiles controller restored and Spring-wired; unit test included.
 
+## Cloud-native release documentation
+
+- [Release Notes: Cloud-Native Build Artifact (Initial Release)](docs/release-notes-cloud-native.md)
+- [Migration Guide: Legacy to Cloud-Native Artifact](docs/migration-cloud-native.md)
+
 ## Compatibility
 
 **GeoServer:** 2.24+ (tested with 2.26.x and 2.28.2)
