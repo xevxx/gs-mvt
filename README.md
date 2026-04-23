@@ -32,13 +32,94 @@ Slippy Tiles controller restored and Spring-wired; unit test included.
 - If you build older branches, match the GeoServer/GeoTools API split (`org.geotools.api.*`).
 
 ## Build
-``` # Java 17 on PATH
+Use Java 17 and Maven 3.8+.
+
+### GeoServer 2 builds
+
+Default GeoServer 2 build:
+```bash
 mvn -V -DskipTests clean package
 ```
+
+GeoServer 2 cloud-native artifact:
+```bash
+mvn -V -DskipTests -Pcloud-native clean package
+```
+
+### GeoServer 3 builds
+
+GeoServer 3 uses the `gs3` Maven profile. Today this is intended to resolve against a locally installed
+GeoServer `3.0-SNAPSHOT` build. In the future, when GeoServer 3 artifacts are published normally, the same
+command will continue to work after updating the `geoserver3.version` property in `pom.xml`.
+
+GeoServer 3 standard artifact:
+```bash
+mvn -V -DskipTests -Pgs3 clean package
+```
+
+GeoServer 3 cloud-native artifact:
+```bash
+mvn -V -DskipTests -Pgs3,cloud-native clean package
+```
+
+### Skipping all test compilation
+
+`-DskipTests` skips running tests but still compiles test sources. If you only need the artifact and want to
+skip test compilation as well, use:
+```bash
+mvn -V -Dmaven.test.skip=true clean package
+mvn -V -Dmaven.test.skip=true -Pcloud-native clean package
+mvn -V -Dmaven.test.skip=true -Pgs3 clean package
+mvn -V -Dmaven.test.skip=true -Pgs3,cloud-native clean package
+```
+
 If Spotless fails with a formatter warning, ensure google-java-format is the expected version in the POM.
 On Windows, if .spotless-index appears, ignore it (add to .gitignore).
 
-The build produces a JAR in target/. Drop it into $GEOSERVER_WEBAPP/WEB-INF/lib and restart.
+### Build outputs
+
+The build produces JARs in `target/`.
+
+- GeoServer 2 standard build: main JAR plus shaded JAR with the `shaded` classifier
+- GeoServer 2 cloud-native build: additional JAR with the `cloud-native` classifier
+- GeoServer 3 standard build: additional JAR with the `gs3` classifier and shaded JAR with the `gs3-shaded` classifier
+- GeoServer 3 cloud-native build: additional JAR with the `gs3-cloud-native` classifier
+
+Drop the appropriate JAR into `$GEOSERVER_WEBAPP/WEB-INF/lib` and restart.
+
+### Adding The Plugin To Cloud-Native Deployments
+
+For containerized deployments, use the cloud-native classified artifact:
+
+- GeoServer 2 container image: `target/gs-mvt-<version>-cloud-native.jar`
+- GeoServer 3 container image: `target/gs-mvt-<version>-gs3-cloud-native.jar`
+
+For GeoServer Cloud, the GeoServer 3 build also includes Spring Boot auto-configuration so the plugin can register
+its WMS output format and slippymap wiring in Boot-based deployments where classic `applicationContext.xml`
+registration is not used.
+
+The preferred approach is to bake the plugin into a derived image instead of copying it into a running container.
+
+Example Dockerfile:
+```dockerfile
+FROM <your-geoserver-image>
+
+# Use the cloud-native artifact that matches your target GeoServer line.
+COPY target/gs-mvt-0.5.1.1-cloud-native.jar ${GEOSERVER_WEBAPP}/WEB-INF/lib/
+# For GeoServer 3, use:
+# COPY target/gs-mvt-0.5.1.1-gs3-cloud-native.jar ${GEOSERVER_WEBAPP}/WEB-INF/lib/
+```
+
+If your base image does not expose `GEOSERVER_WEBAPP`, copy the JAR into the GeoServer webapp's
+`WEB-INF/lib` directory used by that image.
+
+For Kubernetes or other orchestrators, use one of these patterns:
+
+- build a custom image containing the plugin JAR
+- mount the plugin JAR into the container's GeoServer `WEB-INF/lib` directory at startup
+
+If you also want service defaults managed externally, set the `GS_MVT_*` environment variables described below
+or mount a properties file and point `GS_MVT_CONFIG_FILE` at it.
 
 # Output Formats / MIME Types
 
@@ -110,7 +191,7 @@ All variables below are optional (safe defaults exist), but are documented for p
 |---|---:|---|
 | `GS_MVT_MIME_TYPE` | `application/x-mvt-custom` | Advertised MVT MIME type used by format registration and slippy defaults. |
 | `GS_MVT_DEFAULT_TILE_SIZE` | `256` | Default slippy tile width/height for `.pbf` when request does not include `tileSize`. |
-| `GS_MVT_TILE_EXTENT` | `256` | Internal tile-local CRS extent used during MVT encoding. |
+| `GS_MVT_TILE_EXTENT` | `256` | Internal tile-local coordinate grid used before final protobuf encoding. Unset/default `256` preserves the legacy GS2 behavior; `4096` moves geometry processing onto the final MVT precision grid. |
 | `GS_MVT_DEFAULT_BUFFER` | `10` | Default slippy WMS buffer when request does not set `buffer`. |
 | `GS_MVT_DEFAULT_STYLES` | empty | Default slippy `styles` value. |
 | `GS_MVT_CONFIG_FILE` | unset | Optional mounted properties path for centralized config injection. |
@@ -125,6 +206,11 @@ GS_MVT_DEFAULT_BUFFER=16
 GS_MVT_DEFAULT_STYLES=
 ```
 
+`GS_MVT_TILE_EXTENT` changes the internal coordinate precision used while transforming, clipping, and simplifying
+geometry before the final MVT commands are written. It does not change styling semantics by itself. Leave it unset to
+match the legacy GeoServer 2 plugin path; set it explicitly only when you want higher internal precision and have
+validated the output in your client.
+
 ## Node-local state audit
 
 - No filesystem temp directories, file locks, or host-local cache files are used by request handling.
@@ -138,9 +224,9 @@ When small_geom_mode=pixel, the encoder’s internal skipping threshold is autom
 
 Placeholders:
 
-Polygons → either a 1×1 tile-unit square or a Point (if PIXEL_AS_POINT=true).
+Polygons → a square sized from the requested display pixels in the active tile-local grid, or a Point (if PIXEL_AS_POINT=true).
 
-Lines → short dash centered at centroid or Point (with PIXEL_AS_POINT=true).
+Lines → a short dash sized from the requested display pixels in the active tile-local grid, or a Point (with PIXEL_AS_POINT=true).
 
 Points → unchanged.
 
@@ -246,12 +332,22 @@ see [Branch 0_3_x_pre_geoserver_2.14.X](https://github.com/emplexed/gs-mvt/tree/
 
 ## Getting Started
 
-For building the plugin the geoserver source code is required. It is available at the
-[boundless maven repository](http://repo.boundlessgeo.com/main/) or on [GitHub](https://github.com/geoserver).
-You can build ```gs-mvt-0.4.X.jar``` with maven or directly download it from [here](https://github.com/emplexed/gs-mvt/releases).
-In order to get started the ```gs-mvt-0.4.X.jar``` package and the depending library ```protobuf-java-3.24.2.jar``` have to be copied to the
-geoserver's lib directory ```geoserver/WEB-INF/lib```. After starting the GeoServer the format
-```application/vnd.mapbox-vector-tile``` is shown in the WMS Format list of the layer preview.
+For GeoServer 2, the default build resolves released artifacts from Maven repositories.
+
+For GeoServer 3, while `3.0-SNAPSHOT` is still under active development, build or install GeoServer 3 locally first
+so the `gs3` profile can resolve those SNAPSHOT artifacts from your local Maven cache. Once GeoServer 3 is published
+normally, this repo is designed to switch to those released artifacts by updating only the `geoserver3.version`
+property in `pom.xml`.
+
+You can also download historical releases from [here](https://github.com/emplexed/gs-mvt/releases), but the current
+recommended path is to build the artifact you need from this repository using the commands above.
+
+After building, copy the appropriate plugin JAR from `target/` into GeoServer's lib directory
+`geoserver/WEB-INF/lib`. The protobuf dependency is shaded into the produced classified artifacts, so no separate
+`protobuf-java` JAR copy step is required for those outputs.
+
+After starting GeoServer, the format `application/vnd.mapbox-vector-tile` is shown in the WMS Format list of the
+layer preview.
 
 ## WMS Query
 

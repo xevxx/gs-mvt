@@ -59,11 +59,15 @@
     </bean>-->
     
     <!-- Streaming map output format -->
-    <bean id="MVTStreamingMapOutputFormat" class="org.geoserver.wms.mvt.MVTStreamingMapOutputFormat">
+    <bean id="MVTStreamingMapOutputFormat"
+          class="org.geoserver.wms.mvt.MVTStreamingMapOutputFormat"
+          init-method="init">
     </bean>
 
     <!-- straming map response -->
-    <bean id="MVTStreamingMapResponse" class="org.geoserver.wms.mvt.MVTStreamingMapResponse">
+    <bean id="MVTStreamingMapResponse"
+          class="org.geoserver.wms.mvt.MVTStreamingMapResponse"
+          init-method="init">
     	<property name="defaultGenLevel" value="MID" />
     	<property name="generalisationTables">
     		<map>

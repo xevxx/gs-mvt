@@ -39,6 +39,8 @@ import org.locationtech.jts.geom.Geometry;
 public class MVTWriter {
 
     static CoordinateReferenceSystem DEFAULT_TARGET_CRS;
+    private static final int DEFAULT_DISPLAY_TILE_SIZE = 256;
+    private static final int PROTOBUF_LAYER_EXTENT = 4096;
 
     private static final Logger LOGGER = Logging.getLogger(MVTWriter.class);
 
@@ -68,6 +70,10 @@ public class MVTWriter {
     /** scale in y direction */
     private final double yScale;
 
+    /** Unbuffered tile-local writer dimensions used before protobuf scaling. */
+    private final double tileWidth;
+    private final double tileHeight;
+
     // ADD — mode/options coming from StreamingMVTMap
     private String smallGeomMode = "drop"; // "drop" | "pixel" | "keep"
     private int pixelSize = 1; // in display pixels
@@ -81,6 +87,8 @@ public class MVTWriter {
     private boolean pixelAsPoint = false;
 
     private java.util.Set<String> keepAttrs = java.util.Collections.emptySet();
+    private int displayWidth = DEFAULT_DISPLAY_TILE_SIZE;
+    private int displayHeight = DEFAULT_DISPLAY_TILE_SIZE;
 
     public void setKeepAttrs(java.util.Set<String> ks) {
         this.keepAttrs = (ks == null) ? java.util.Collections.emptySet() : ks;
@@ -224,6 +232,8 @@ public class MVTWriter {
             double smallGeometryThreshold)
             throws TransformException, FactoryException {
         this.targetCRS = targetCRS != null ? targetCRS : DEFAULT_TARGET_CRS;
+        double unbufferedTileWidth = targetBBOX.getWidth();
+        double unbufferedTileHeight = targetBBOX.getHeight();
         if (sourceBBOX instanceof ReferencedEnvelope) {
             sourceBBOX = ((ReferencedEnvelope) sourceBBOX).transform(this.targetCRS, true);
         } else {
@@ -241,10 +251,18 @@ public class MVTWriter {
         }
         this.sourceBBOX = sourceBBOX;
         this.targetBBOX = targetBBOX;
+        this.tileWidth = unbufferedTileWidth;
+        this.tileHeight = unbufferedTileHeight;
         this.xScale = this.calculateXFactor();
         this.yScale = this.calculateYFactor();
         this.vectorTileEncoder = new VectorTileEncoder(
-                4096, targetBBOX, includeLayersOnEmptyFeatureList, genFactor, smallGeometryThreshold);
+                PROTOBUF_LAYER_EXTENT,
+                targetBBOX,
+                this.tileWidth,
+                this.tileHeight,
+                includeLayersOnEmptyFeatureList,
+                genFactor,
+                smallGeometryThreshold);
         this.smallGeometryThreshold = smallGeometryThreshold;
     }
 
@@ -256,6 +274,8 @@ public class MVTWriter {
             int bufferSize)
             throws TransformException, FactoryException {
         this.targetCRS = targetCRS != null ? targetCRS : DEFAULT_TARGET_CRS;
+        double unbufferedTileWidth = targetBBOX.getWidth();
+        double unbufferedTileHeight = targetBBOX.getHeight();
         MathTransform transform = CRS.findMathTransform(sourceCRS, this.targetCRS);
         sourceBBOX = JTS.transform(sourceBBOX, transform);
         if (bufferSize > 0) {
@@ -269,9 +289,18 @@ public class MVTWriter {
         }
         this.sourceBBOX = sourceBBOX;
         this.targetBBOX = targetBBOX;
+        this.tileWidth = unbufferedTileWidth;
+        this.tileHeight = unbufferedTileHeight;
         this.xScale = this.calculateXFactor();
         this.yScale = this.calculateYFactor();
-        this.vectorTileEncoder = new VectorTileEncoder(targetBBOX);
+        this.vectorTileEncoder = new VectorTileEncoder(
+                PROTOBUF_LAYER_EXTENT,
+                targetBBOX,
+                this.tileWidth,
+                this.tileHeight,
+                false,
+                0.1d,
+                0.0d);
         this.smallGeometryThreshold = 0.0;
     }
 
@@ -614,85 +643,36 @@ public class MVTWriter {
     }
 
     /**
-     * Create a 1-pixel placeholder geometry in tile coordinates (0–4096 grid). This guarantees that the geometry is
-     * exactly 1 rendered pixel in size, regardless of zoom or world CRS.
+     * Create a placeholder geometry in writer tile coordinates. The requested pixel size is converted into the active
+     * tile-local units so placeholders stay visually stable when the internal tile extent changes.
      */
     private Geometry placeholderSameKind(Geometry original) {
         GeometryFactory gf = original.getFactory() != null ? original.getFactory() : new GeometryFactory();
 
-        // Get centroid in *tile coordinates*
+        // Get centroid in tile coordinates.
         Coordinate c = original.getCentroid().getCoordinate();
-
-        // One display pixel = 1 unit in tile-local space
-        double half = 0.5 * pixelSize; // pixelSize = ENV PIXEL_SIZE (default 1)
+        double halfX = 0.5 * pixelSize * getTileUnitsPerDisplayPixelX();
+        double halfY = 0.5 * pixelSize * getTileUnitsPerDisplayPixelY();
         if (original instanceof org.locationtech.jts.geom.Polygon
                 || original instanceof org.locationtech.jts.geom.MultiPolygon) {
-
-            // org.locationtech.jts.geom.GeometryFactory gf =
-            //         original.getFactory() != null
-            //                 ? original.getFactory()
-            //                 : new org.locationtech.jts.geom.GeometryFactory();
-
-            // centroid is already in tile-local coordinates (0..4096) at this stage
-            // org.locationtech.jts.geom.Coordinate c = original.getCentroid().getCoordinate();
-
-            // snap to integer grid and build a 1x1 square
-            int cx = (int) Math.round(c.x);
-            int cy = (int) Math.round(c.y);
-
-            org.locationtech.jts.geom.Coordinate[] ring = new org.locationtech.jts.geom.Coordinate[] {
-                new org.locationtech.jts.geom.Coordinate(cx, cy),
-                new org.locationtech.jts.geom.Coordinate(cx + 1, cy),
-                new org.locationtech.jts.geom.Coordinate(cx + 1, cy + 1),
-                new org.locationtech.jts.geom.Coordinate(cx, cy + 1),
-                new org.locationtech.jts.geom.Coordinate(cx, cy)
+            Coordinate[] ring = new Coordinate[] {
+                new Coordinate(c.x - halfX, c.y - halfY),
+                new Coordinate(c.x + halfX, c.y - halfY),
+                new Coordinate(c.x + halfX, c.y + halfY),
+                new Coordinate(c.x - halfX, c.y + halfY),
+                new Coordinate(c.x - halfX, c.y - halfY)
             };
-
-            org.locationtech.jts.geom.LinearRing shell = gf.createLinearRing(ring);
-            org.locationtech.jts.geom.Polygon poly = gf.createPolygon(shell, null);
+            LinearRing shell = gf.createLinearRing(ring);
+            Polygon poly = gf.createPolygon(shell, null);
             if (original instanceof org.locationtech.jts.geom.MultiPolygon) {
-                return gf.createMultiPolygon(new org.locationtech.jts.geom.Polygon[] {poly});
+                return gf.createMultiPolygon(new Polygon[] {poly});
             }
             return poly;
         }
 
-        // if (original instanceof Polygon || original instanceof MultiPolygon) {
-        //     Coordinate[] ring =
-        //             new Coordinate[] {
-        //                 new Coordinate(c.x - half, c.y - half),
-        //                 new Coordinate(c.x + half, c.y - half),
-        //                 new Coordinate(c.x + half, c.y + half),
-        //                 new Coordinate(c.x - half, c.y + half),
-        //                 new Coordinate(c.x - half, c.y - half)
-        //             };
-        //     LinearRing shell = gf.createLinearRing(ring);
-        //     Polygon poly = gf.createPolygon(shell, null);
-        //     if (original instanceof MultiPolygon) {
-        //         return gf.createMultiPolygon(new Polygon[] {poly});
-        //     }
-        //     return poly;
-        // }
-        // if (original instanceof Polygon || original instanceof MultiPolygon) {
-        //     // Degenerate polygon: all coords at centroid
-        //     Coordinate[] ring =
-        //             new Coordinate[] {
-        //                 new Coordinate(c.x, c.y),
-        //                 new Coordinate(c.x, c.y),
-        //                 new Coordinate(c.x, c.y),
-        //                 new Coordinate(c.x, c.y),
-        //                 new Coordinate(c.x, c.y)
-        //             };
-        //     LinearRing shell = gf.createLinearRing(ring);
-        //     Polygon poly = gf.createPolygon(shell, null);
-        //     if (original instanceof MultiPolygon) {
-        //         return gf.createMultiPolygon(new Polygon[] {poly});
-        //     }
-        //     return poly;
-        // }
-
         if (original instanceof LineString || original instanceof MultiLineString) {
-            Coordinate a = new Coordinate(c.x - half, c.y);
-            Coordinate b = new Coordinate(c.x + half, c.y);
+            Coordinate a = new Coordinate(c.x - halfX, c.y);
+            Coordinate b = new Coordinate(c.x + halfX, c.y);
             LineString line = gf.createLineString(new Coordinate[] {a, b});
             if (original instanceof MultiLineString) {
                 return gf.createMultiLineString(new LineString[] {line});
@@ -724,5 +704,18 @@ public class MVTWriter {
 
     public void setSmallGeometryThreshold(double t) {
         this.smallGeometryThreshold = t;
+    }
+
+    public void setDisplaySize(int width, int height) {
+        this.displayWidth = width > 0 ? width : DEFAULT_DISPLAY_TILE_SIZE;
+        this.displayHeight = height > 0 ? height : DEFAULT_DISPLAY_TILE_SIZE;
+    }
+
+    double getTileUnitsPerDisplayPixelX() {
+        return tileWidth / Math.max(displayWidth, 1);
+    }
+
+    double getTileUnitsPerDisplayPixelY() {
+        return tileHeight / Math.max(displayHeight, 1);
     }
 }

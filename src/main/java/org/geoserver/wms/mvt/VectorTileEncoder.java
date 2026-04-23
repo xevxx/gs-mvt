@@ -42,8 +42,9 @@ public class VectorTileEncoder {
 
     private final Geometry clipGeometry;
 
-    /** autoscale limits the coordinatesystem of the tiles to 256 */
-    private final boolean autoScale;
+    /** Scale from tile-local writer coordinates to the protobuf layer extent. */
+    private final double scaleX;
+    private final double scaleY;
 
     private final double simplificationFactor;
     private final double smallGeometryThreshold;
@@ -59,7 +60,7 @@ public class VectorTileEncoder {
      * @param targetBBox the target bbox
      */
     public VectorTileEncoder(Envelope targetBBox) {
-        this(4096, targetBBox, false, 0.1d, DEFAULT_SMALL_GEOMETRY_THRESHOLD);
+        this(4096, targetBBox, 256d, 256d, false, 0.1d, DEFAULT_SMALL_GEOMETRY_THRESHOLD);
     }
 
     /**
@@ -85,9 +86,44 @@ public class VectorTileEncoder {
             boolean includeLayersOnEmptyFeatureList,
             double simplificationFactor,
             double smallGeometryThreshold) {
-        this.autoScale = true;
+        this(
+                extent,
+                targetBbox,
+                256d,
+                256d,
+                includeLayersOnEmptyFeatureList,
+                simplificationFactor,
+                smallGeometryThreshold);
+    }
+
+    /**
+     * Create a {@link VectorTileEncoder} with an explicit tile-local coordinate grid.
+     *
+     * <p>{@code tileWidth} / {@code tileHeight} describe the unbuffered writer coordinate space that incoming
+     * geometries already use. The encoder scales from that writer space to the protobuf {@code extent}.
+     *
+     * @param extent protobuf layer extent, typically 4096
+     * @param targetBbox clipping bbox in writer coordinates, including any buffer
+     * @param tileWidth unbuffered tile-local width used by the writer
+     * @param tileHeight unbuffered tile-local height used by the writer
+     * @param includeLayersOnEmptyFeatureList include layer message even if no feature messages are present for this
+     *     layer (by adding the layer element which is valid in vector tiles spec)
+     * @param simplificationFactor the factor for simplification
+     * @param smallGeometryThreshold defines the threshold in length / area when geometries should be skipped in output.
+     *     0 or negative means all geoms are included
+     */
+    public VectorTileEncoder(
+            int extent,
+            Envelope targetBbox,
+            double tileWidth,
+            double tileHeight,
+            boolean includeLayersOnEmptyFeatureList,
+            double simplificationFactor,
+            double smallGeometryThreshold) {
         this.extent = extent;
         this.clipGeometry = JTS.toGeometry(targetBbox);
+        this.scaleX = extent / Math.max(tileWidth, 1d);
+        this.scaleY = extent / Math.max(tileHeight, 1d);
         this.includeLayersOnEmptyFeatureList = includeLayersOnEmptyFeatureList;
         this.simplificationFactor = simplificationFactor;
         this.smallGeometryThreshold = smallGeometryThreshold;
@@ -109,7 +145,14 @@ public class VectorTileEncoder {
      */
     public VectorTileEncoder(
             int extent, int polygonClipBuffer, double simplificationFactor, double smallGeometryThreshold) {
-        this(extent, createTileEnvelope(polygonClipBuffer, 256), false, simplificationFactor, smallGeometryThreshold);
+        this(
+                extent,
+                createTileEnvelope(polygonClipBuffer, 256),
+                256d,
+                256d,
+                false,
+                simplificationFactor,
+                smallGeometryThreshold);
     }
 
     /**
@@ -137,8 +180,8 @@ public class VectorTileEncoder {
         return layer;
     }
     /**
-     * Add a feature with layer name (typically feature type name), some attributes and a Geometry. The Geometry must be
-     * in "pixel" space 0,0 lower left and 256,256 upper right.
+     * Add a feature with layer name (typically feature type name), some attributes and a Geometry. The Geometry must
+     * already be in the writer's tile-local coordinate system.
      *
      * <p>For optimization, geometries will be clipped, geometries will simplified and features with geometries outside
      * of the tile will be skipped.
@@ -534,8 +577,6 @@ public class VectorTileEncoder {
         int lineToIndex = 0;
         int lineToLength = 0;
 
-        double scale = autoScale ? (extent / 256.0) : 1.0;
-
         for (int i = 0; i < cs.length; i++) {
             Coordinate c = cs[i];
 
@@ -543,8 +584,8 @@ public class VectorTileEncoder {
                 r.add(commandAndLength(Command.MoveTo, multiPoint ? cs.length : 1));
             }
 
-            int _x = (int) Math.round(c.x * scale);
-            int _y = (int) Math.round(c.y * scale);
+            int _x = (int) Math.round(c.x * scaleX);
+            int _y = (int) Math.round(c.y * scaleY);
 
             // prevent point equal to the previous
             if (i > 0 && _x == x && _y == y) {
@@ -598,6 +639,14 @@ public class VectorTileEncoder {
     static int zigZagEncode(int n) {
         // https://developers.google.com/protocol-buffers/docs/encoding#types
         return (n << 1) ^ (n >> 31);
+    }
+
+    double getScaleX() {
+        return scaleX;
+    }
+
+    double getScaleY() {
+        return scaleY;
     }
 
     private static final class Layer {

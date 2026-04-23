@@ -4,13 +4,6 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <!-- set parent pom to extension pom -->
-  <parent>
-    <groupId>org.geoserver</groupId>
-    <artifactId>extension</artifactId>
-    <version>2.28.2</version>
-  </parent>
-
   <groupId>org.geoserver.extension</groupId>
   <artifactId>gs-mvt</artifactId>
   <version>0.5.1.1</version>
@@ -18,17 +11,44 @@
   <name>MVT WMS output format</name>
 
   <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+
+    <geoserver2.version>2.28.2</geoserver2.version>
+    <geoserver3.version>3.0-SNAPSHOT</geoserver3.version>
+    <active.geoserver.version>${geoserver2.version}</active.geoserver.version>
+    <geoserver.wms.artifactId>gs-wms</geoserver.wms.artifactId>
+    <servlet.source.variant>gs2</servlet.source.variant>
+    <servlet.api.groupId>javax.servlet</servlet.api.groupId>
+    <servlet.api.artifactId>javax.servlet-api</servlet.api.artifactId>
+    <servlet.api.version>${javax.servlet-api.version}</servlet.api.version>
+
     <protobuf-java.version>3.24.2</protobuf-java.version>
+    <javax.servlet-api.version>4.0.1</javax.servlet-api.version>
+    <jakarta.servlet-api.version>6.1.0</jakarta.servlet-api.version>
+    <spring-test.version>5.3.39</spring-test.version>
+    <spring-boot-autoconfigure.version>3.4.3</spring-boot-autoconfigure.version>
+    <junit.version>4.13.2</junit.version>
+    <xmlunit.version>1.6</xmlunit.version>
+
+    <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
+    <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
+    <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
+    <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
     <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
+    <build-helper-maven-plugin.version>3.6.0</build-helper-maven-plugin.version>
+
+    <shaded.classifier>shaded</shaded.classifier>
+    <cloud-native.classifier>cloud-native</cloud-native.classifier>
   </properties>
 
   <dependencies>
     <dependency>
       <groupId>org.geoserver</groupId>
-      <artifactId>gs-wms</artifactId>
+      <artifactId>${geoserver.wms.artifactId}</artifactId>
+      <version>${active.geoserver.version}</version>
     </dependency>
 
-    <!-- protobuf runtime to embed (will be shaded/relocated) -->
     <dependency>
       <groupId>com.google.protobuf</groupId>
       <artifactId>protobuf-java</artifactId>
@@ -37,24 +57,40 @@
 
     <dependency>
       <groupId>org.geoserver</groupId>
-      <artifactId>gs-wms</artifactId>
+      <artifactId>${geoserver.wms.artifactId}</artifactId>
+      <version>${active.geoserver.version}</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.geoserver</groupId>
       <artifactId>gs-main</artifactId>
+      <version>${active.geoserver.version}</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>${servlet.api.groupId}</groupId>
+      <artifactId>${servlet.api.artifactId}</artifactId>
+      <version>${servlet.api.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-test</artifactId>
+      <version>${spring-test.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>xmlunit</groupId>
       <artifactId>xmlunit</artifactId>
+      <version>${xmlunit.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -68,7 +104,53 @@
 
   <build>
     <plugins>
-      <!-- Shade + relocate protobuf so we don't clash with GeoServer's protobuf-java-3.9.1 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven-compiler-plugin.version}</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven-surefire-plugin.version}</version>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>${maven-jar-plugin.version}</version>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>${maven-resources-plugin.version}</version>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>${build-helper-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>add-servlet-variant-sources</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>src/${servlet.source.variant}/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
@@ -82,27 +164,19 @@
             </goals>
             <configuration>
               <createDependencyReducedPom>false</createDependencyReducedPom>
-
-              <!-- Create a separate shaded jar: target/gs-mvt-0.5.1.1-shaded.jar -->
               <shadedArtifactAttached>true</shadedArtifactAttached>
-              <shadedClassifierName>shaded</shadedClassifierName>
-
-              <!-- Relocate protobuf -->
+              <shadedClassifierName>${shaded.classifier}</shadedClassifierName>
+              <artifactSet>
+                <includes>
+                  <include>com.google.protobuf:protobuf-java</include>
+                </includes>
+              </artifactSet>
               <relocations>
                 <relocation>
                   <pattern>com.google.protobuf</pattern>
                   <shadedPattern>org.geoserver.wms.mvt.shaded.protobuf</shadedPattern>
                 </relocation>
               </relocations>
-
-              <!-- Ensure protobuf-java is pulled into the shaded jar -->
-              <artifactSet>
-                <includes>
-                  <include>com.google.protobuf:protobuf-java</include>
-                </includes>
-              </artifactSet>
-
-              <!-- Avoid signature file issues -->
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
@@ -122,13 +196,76 @@
 
   <profiles>
     <profile>
+      <id>gs3</id>
+      <properties>
+        <active.geoserver.version>${geoserver3.version}</active.geoserver.version>
+        <geoserver.wms.artifactId>gs-wms-core</geoserver.wms.artifactId>
+        <servlet.source.variant>gs3</servlet.source.variant>
+        <servlet.api.groupId>jakarta.servlet</servlet.api.groupId>
+        <servlet.api.artifactId>jakarta.servlet-api</servlet.api.artifactId>
+        <servlet.api.version>${jakarta.servlet-api.version}</servlet.api.version>
+        <spring-test.version>7.0.0</spring-test.version>
+        <shaded.classifier>gs3-shaded</shaded.classifier>
+        <cloud-native.classifier>gs3-cloud-native</cloud-native.classifier>
+      </properties>
+      <dependencies>
+        <dependency>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-autoconfigure</artifactId>
+          <version>${spring-boot-autoconfigure.version}</version>
+          <scope>provided</scope>
+        </dependency>
+      </dependencies>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>build-helper-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>add-gs3-resources</id>
+                <phase>generate-resources</phase>
+                <goals>
+                  <goal>add-resource</goal>
+                </goals>
+                <configuration>
+                  <resources>
+                    <resource>
+                      <directory>src/gs3/resources</directory>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-gs3-jar</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <configuration>
+                  <classifier>gs3</classifier>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
       <id>cloud-native</id>
       <build>
         <plugins>
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-shade-plugin</artifactId>
-            <version>${maven-shade-plugin.version}</version>
             <executions>
               <execution>
                 <id>shade-protobuf-cloud-native</id>
@@ -139,23 +276,19 @@
                 <configuration>
                   <createDependencyReducedPom>false</createDependencyReducedPom>
                   <shadedArtifactAttached>true</shadedArtifactAttached>
-                  <shadedClassifierName>cloud-native</shadedClassifierName>
+                  <shadedClassifierName>${cloud-native.classifier}</shadedClassifierName>
                   <minimizeJar>true</minimizeJar>
-
-                  <!-- Keep cloud artifact dependency surface explicit and container-safe -->
                   <artifactSet>
                     <includes>
                       <include>com.google.protobuf:protobuf-java</include>
                     </includes>
                   </artifactSet>
-
                   <relocations>
                     <relocation>
                       <pattern>com.google.protobuf</pattern>
                       <shadedPattern>org.geoserver.wms.mvt.shaded.protobuf</shadedPattern>
                     </relocation>
                   </relocations>
-
                   <filters>
                     <filter>
                       <artifact>*:*</artifact>
@@ -166,7 +299,6 @@
                       </excludes>
                     </filter>
                   </filters>
-
                   <transformers>
                     <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                       <manifestEntries>
@@ -184,5 +316,4 @@
       </build>
     </profile>
   </profiles>
-
 </project>

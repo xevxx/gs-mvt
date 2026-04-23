@@ -6,7 +6,6 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
-import javax.annotation.PostConstruct;
 import org.apache.commons.lang.math.NumberUtils;
 import org.geoserver.platform.Operation;
 import org.geoserver.platform.ServiceException;
@@ -46,7 +45,6 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
     private GeneralisationLevel defaultGenLevel;
     private Map<GeneralisationLevel, Map<Integer, Double>> generalisationTables;
 
-    @PostConstruct
     public void init() {
         System.err.println("gs-mvt: MVTStreamingMapResponse bean created");
     }

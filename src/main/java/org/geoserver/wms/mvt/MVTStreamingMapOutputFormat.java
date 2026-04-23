@@ -3,7 +3,6 @@ package org.geoserver.wms.mvt;
 import java.io.IOException;
 import java.util.Set;
 import java.util.logging.Logger;
-import javax.annotation.PostConstruct;
 import org.geoserver.platform.ServiceException;
 import org.geoserver.wms.GetMapOutputFormat;
 import org.geoserver.wms.MapProducerCapabilities;
@@ -28,7 +27,6 @@ public class MVTStreamingMapOutputFormat implements GetMapOutputFormat {
         return MVT.OUTPUT_FORMATS;
     }
 
-    @PostConstruct
     public void init() {
         System.err.println("gs-mvt: MVTStreamingMapOutputFormat bean created");
     }

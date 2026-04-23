@@ -152,6 +152,9 @@ public class StreamingMVTMap extends WebMap {
             mvtWriter.setSmallGeometryThreshold(smallGeometryThreshold);
             mvtWriter.setSmallGeomMode(smallGeomMode);
             mvtWriter.setPixelSize(pixelSize);
+            if (req != null) {
+                mvtWriter.setDisplaySize(req.getWidth(), req.getHeight());
+            }
             mvtWriter.setStripAttributes(stripAttributes);
             mvtWriter.setPixelAsPoint(pixelAsPoint);
             mvtWriter.setKeepAttrs(keepAttrs);
