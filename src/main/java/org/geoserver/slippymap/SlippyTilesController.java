@@ -21,6 +21,7 @@ import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.locationtech.jts.geom.Polygon;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.Controller;
+import org.geoserver.wms.mvt.EnvironmentConfig;
 
 /**
  * Slippy Map Tiles controller that converts /slippymap/{layers}/{z}/{x}/{y}.{ext} into a WMS GetMap forward, so WMS
@@ -31,9 +32,10 @@ import org.springframework.web.servlet.mvc.Controller;
  */
 public class SlippyTilesController implements Controller {
 
-    private int defaultBuffer = 10;
+    private int defaultBuffer = EnvironmentConfig.getInt("GS_MVT_DEFAULT_BUFFER", 10);
     private String defaultFormat = org.geoserver.wms.mvt.MVT.MIME_TYPE; // e.g. application/x-mvt-custom
-    private String defaultStyles = "";
+    private String defaultStyles = EnvironmentConfig.getString("GS_MVT_DEFAULT_STYLES", "");
+    private int defaultPbfTileSize = EnvironmentConfig.getInt("GS_MVT_DEFAULT_TILE_SIZE", 256);
 
     /** Mapping of file extensions (e.g. "pbf") to MIME types (e.g. application/x-mvt-custom). */
     private Map<String, String> supportedOutputFormats;
@@ -113,12 +115,16 @@ public class SlippyTilesController implements Controller {
                 .append(
                         tileSize != null
                                 ? tileSize
-                                : (defaultTileSize != null ? defaultTileSize.getOrDefault(ext, "256") : "256"));
+                                : (defaultTileSize != null
+                                        ? defaultTileSize.getOrDefault(ext, String.valueOf(defaultPbfTileSize))
+                                        : String.valueOf(defaultPbfTileSize)));
         sb.append("&height=")
                 .append(
                         tileSize != null
                                 ? tileSize
-                                : (defaultTileSize != null ? defaultTileSize.getOrDefault(ext, "256") : "256"));
+                                : (defaultTileSize != null
+                                        ? defaultTileSize.getOrDefault(ext, String.valueOf(defaultPbfTileSize))
+                                        : String.valueOf(defaultPbfTileSize)));
         sb.append("&srs=").append(getCRSIdentifier(bbox.getCoordinateReferenceSystem()));
         sb.append("&bbox=")
                 .append(bbox.getMinX())

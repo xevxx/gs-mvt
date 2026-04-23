@@ -27,8 +27,8 @@ public class StreamingMVTMap extends WebMap {
 
     private static final Logger LOGGER = Logging.getLogger(StreamingMVTMap.class);
 
-    /** The Mapbox client requests 512x512 tiles but the target tile has 256 units in each direction. */
-    private static int targetBinaryCRSTileSize = 256;
+    /** Tile-local CRS extent, configurable at service level. */
+    private static final int targetBinaryCRSTileSize = EnvironmentConfig.getInt("GS_MVT_TILE_EXTENT", 256);
 
     /** @param context the map context, can be {@code null} is there's _really_ no context around */
     public StreamingMVTMap(WMSMapContent context) {
