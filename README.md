@@ -35,6 +35,10 @@ On Windows, if .spotless-index appears, ignore it (add to .gitignore).
 
 The build produces a JAR in target/. Drop it into $GEOSERVER_WEBAPP/WEB-INF/lib and restart.
 
+## Kubernetes / Helm deployment examples
+
+See [docs/deployment.md](docs/deployment.md) for deployment examples that cover plugin artifact loading, required configuration/secrets, readiness/liveness probes, volume and network requirements, and a minimal cluster quickstart validation path.
+
 # Output Formats / MIME Types
 
 By default we advertise the standard MVT type:
