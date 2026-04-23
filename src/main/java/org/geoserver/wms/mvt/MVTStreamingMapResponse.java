@@ -12,6 +12,9 @@ import org.geoserver.platform.Operation;
 import org.geoserver.platform.ServiceException;
 import org.geoserver.wms.GeneralisationLevel;
 import org.geoserver.wms.GetMapRequest;
+import org.geoserver.wms.mvt.runtime.ConfigurationSource;
+import org.geoserver.wms.mvt.runtime.RuntimeAdapter;
+import org.geoserver.wms.mvt.runtime.RuntimeAdapters;
 import org.geoserver.wms.map.AbstractMapResponse;
 import org.geotools.util.logging.Logging;
 import org.locationtech.jts.geom.Coordinate;
@@ -45,10 +48,20 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
 
     private GeneralisationLevel defaultGenLevel;
     private Map<GeneralisationLevel, Map<Integer, Double>> generalisationTables;
+    private RuntimeAdapter runtimeAdapter;
 
     @PostConstruct
     public void init() {
-        System.err.println("gs-mvt: MVTStreamingMapResponse bean created");
+        runtimeAdapter = RuntimeAdapters.current();
+        try {
+            LOGGER.info("gs-mvt: MVTStreamingMapResponse bean created (adapter="
+                    + runtimeAdapter.flavor()
+                    + ", tempDir="
+                    + runtimeAdapter.storage().tempDir()
+                    + ")");
+        } catch (IOException e) {
+            LOGGER.warning("gs-mvt: Unable to resolve temp directory from runtime adapter: " + e.getMessage());
+        }
     }
     // Mode enum we pass to StreamingMVTMap
     public enum SmallGeomMode {
@@ -68,7 +81,7 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
 
     @Override
     public void write(Object value, OutputStream output, Operation operation) throws IOException, ServiceException {
-        System.err.println("gs-mvt: MapResponse.write HIT");
+        RuntimeAdapter adapter = runtime();
         StreamingMVTMap map = (StreamingMVTMap) value;
 
         Double genFactor = null;
@@ -81,13 +94,8 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
             GetMapRequest request = (GetMapRequest) operation.getParameters()[0];
 
             // ---- make ENV lookups case-insensitive
-            Map<String, Object> rawEnv = request.getEnv();
-            Map<String, Object> env = new java.util.HashMap<>();
-            if (rawEnv != null) {
-                for (Map.Entry<String, Object> e : rawEnv.entrySet()) {
-                    env.put(e.getKey().toLowerCase(), e.getValue());
-                }
-            }
+            ConfigurationSource configuration = adapter.configuration();
+            Map<String, Object> env = configuration.requestEnv(request);
 
             // existing: gen factor / level
             Object reqGenFactor = env.get(PARAM_GENERALISATION_FACTOR); // keys are already lower
@@ -176,12 +184,16 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
 
         // --- Handle non-enum "MIN" / "MAX" first
         if ("MIN".equals(key)) {
-            Map<Integer, Double> low = generalisationTables.get(GeneralisationLevel.LOW);
-            return scaleTable(low, 0.5); // tune factor as you like (e.g., 0.5 = less simplification than LOW)
+            return runtime().clusterState().getOrCompute("gen-level-min", () -> {
+                Map<Integer, Double> low = generalisationTables.get(GeneralisationLevel.LOW);
+                return scaleTable(low, 0.5); // tune factor as you like (e.g., 0.5 = less simplification than LOW)
+            });
         }
         if ("MAX".equals(key)) {
-            Map<Integer, Double> high = generalisationTables.get(GeneralisationLevel.HIGH);
-            return scaleTable(high, 1.5); // tune factor as you like (e.g., 1.5 = more simplification than HIGH)
+            return runtime().clusterState().getOrCompute("gen-level-max", () -> {
+                Map<Integer, Double> high = generalisationTables.get(GeneralisationLevel.HIGH);
+                return scaleTable(high, 1.5); // tune factor as you like (e.g., 1.5 = more simplification than HIGH)
+            });
         }
 
         // --- Fallback to the enum levels
@@ -224,6 +236,15 @@ public class MVTStreamingMapResponse extends AbstractMapResponse {
 
     public void setGeneralisationTables(Map<GeneralisationLevel, Map<Integer, Double>> generalisationTables) {
         this.generalisationTables = generalisationTables;
+        runtime().clusterState().invalidate("gen-level-min");
+        runtime().clusterState().invalidate("gen-level-max");
+    }
+
+    private RuntimeAdapter runtime() {
+        if (runtimeAdapter == null) {
+            runtimeAdapter = RuntimeAdapters.current();
+        }
+        return runtimeAdapter;
     }
 
     // ---------- NEW helpers for ENV parsing ----------

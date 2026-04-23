@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.logging.Logger;
 import javax.annotation.PostConstruct;
 import org.geoserver.platform.ServiceException;
+import org.geoserver.wms.mvt.runtime.RuntimeAdapters;
 import org.geoserver.wms.GetMapOutputFormat;
 import org.geoserver.wms.MapProducerCapabilities;
 import org.geoserver.wms.WMSMapContent;
@@ -30,7 +31,15 @@ public class MVTStreamingMapOutputFormat implements GetMapOutputFormat {
 
     @PostConstruct
     public void init() {
-        System.err.println("gs-mvt: MVTStreamingMapOutputFormat bean created");
+        try {
+            LOGGER.info("gs-mvt: MVTStreamingMapOutputFormat bean created (adapter="
+                    + RuntimeAdapters.current().flavor()
+                    + ", tempDir="
+                    + RuntimeAdapters.current().storage().tempDir()
+                    + ")");
+        } catch (IOException e) {
+            LOGGER.warning("gs-mvt: unable to resolve adapter temp directory: " + e.getMessage());
+        }
     }
     /**
      * @return {@code "application/x-protobuf"}

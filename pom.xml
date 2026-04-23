@@ -20,6 +20,7 @@
   <properties>
     <protobuf-java.version>3.24.2</protobuf-java.version>
     <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
+    <gs.mvt.build.flavor>legacy</gs.mvt.build.flavor>
   </properties>
 
   <dependencies>
@@ -67,6 +68,12 @@
   </repositories>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
     <plugins>
       <!-- Shade + relocate protobuf so we don't clash with GeoServer's protobuf-java-3.9.1 -->
       <plugin>
@@ -119,5 +126,14 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>cloud</id>
+      <properties>
+        <gs.mvt.build.flavor>cloud</gs.mvt.build.flavor>
+      </properties>
+    </profile>
+  </profiles>
 
 </project>
