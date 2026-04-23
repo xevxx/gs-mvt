@@ -129,7 +129,7 @@ public class SlippyTilesController implements Controller {
                 .append(',')
                 .append(bbox.getMaxY());
 
-        if (buffer != null) sb.append("&buffer=").append(buffer);
+        sb.append("&buffer=").append(buffer != null ? buffer : defaultBuffer);
         if (time != null) sb.append("&time=").append(urlEncode(time));
         if (sld != null) sb.append("&sld=").append(urlEncode(sld));
         if (sld_body != null) sb.append("&sld_body=").append(urlEncode(sld_body));

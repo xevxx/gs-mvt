@@ -128,4 +128,19 @@ public class SlippyTilesControllerTest extends AbstractMVTTest {
         Assert.assertEquals(contentForwardedWms.length, contentWms.length);
         Assert.assertArrayEquals(contentForwardedWms, contentWms);
     }
+
+    @Test
+    public void testDefaultBufferAppliedWhenMissing() throws Exception {
+        String requestSlippy =
+                "/slippymap/" + TEST_LINES.getPrefix() + ":" + TEST_LINES.getLocalPart() + "/12/2196/1427.pbf";
+
+        MockHttpServletResponse responseSlippy = getAsServletResponse(requestSlippy);
+        Assert.assertEquals(200, responseSlippy.getStatus());
+
+        String forwardedUrl = responseSlippy.getForwardedUrl();
+        Assert.assertNotNull(forwardedUrl);
+
+        Map<String, String> qp = parseQueryParams(forwardedUrl);
+        Assert.assertEquals("10", findParam(qp, "BUFFER"));
+    }
 }
