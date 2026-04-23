@@ -20,6 +20,7 @@
   <properties>
     <protobuf-java.version>3.24.2</protobuf-java.version>
     <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
+    <gs.mvt.build.flavor>legacy</gs.mvt.build.flavor>
   </properties>
 
   <dependencies>
@@ -67,6 +68,12 @@
   </repositories>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
     <plugins>
       <!-- Shade + relocate protobuf so we don't clash with GeoServer's protobuf-java-3.9.1 -->
       <plugin>
@@ -122,66 +129,10 @@
 
   <profiles>
     <profile>
-      <id>cloud-native</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-shade-plugin</artifactId>
-            <version>${maven-shade-plugin.version}</version>
-            <executions>
-              <execution>
-                <id>shade-protobuf-cloud-native</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>shade</goal>
-                </goals>
-                <configuration>
-                  <createDependencyReducedPom>false</createDependencyReducedPom>
-                  <shadedArtifactAttached>true</shadedArtifactAttached>
-                  <shadedClassifierName>cloud-native</shadedClassifierName>
-                  <minimizeJar>true</minimizeJar>
-
-                  <!-- Keep cloud artifact dependency surface explicit and container-safe -->
-                  <artifactSet>
-                    <includes>
-                      <include>com.google.protobuf:protobuf-java</include>
-                    </includes>
-                  </artifactSet>
-
-                  <relocations>
-                    <relocation>
-                      <pattern>com.google.protobuf</pattern>
-                      <shadedPattern>org.geoserver.wms.mvt.shaded.protobuf</shadedPattern>
-                    </relocation>
-                  </relocations>
-
-                  <filters>
-                    <filter>
-                      <artifact>*:*</artifact>
-                      <excludes>
-                        <exclude>META-INF/*.SF</exclude>
-                        <exclude>META-INF/*.DSA</exclude>
-                        <exclude>META-INF/*.RSA</exclude>
-                      </excludes>
-                    </filter>
-                  </filters>
-
-                  <transformers>
-                    <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                      <manifestEntries>
-                        <GS-MVT-Artifact-Flavor>cloud-native</GS-MVT-Artifact-Flavor>
-                        <GS-MVT-Runtime-State>stateless</GS-MVT-Runtime-State>
-                        <GS-MVT-Filesystem-Mode>container-safe</GS-MVT-Filesystem-Mode>
-                      </manifestEntries>
-                    </transformer>
-                  </transformers>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
+      <id>cloud</id>
+      <properties>
+        <gs.mvt.build.flavor>cloud</gs.mvt.build.flavor>
+      </properties>
     </profile>
   </profiles>
 
