@@ -121,6 +121,10 @@ For Kubernetes or other orchestrators, use one of these patterns:
 If you also want service defaults managed externally, set the `GS_MVT_*` environment variables described below
 or mount a properties file and point `GS_MVT_CONFIG_FILE` at it.
 
+## Kubernetes / Helm deployment examples
+
+See [docs/deployment.md](docs/deployment.md) for deployment examples that cover plugin artifact loading, required configuration/secrets, readiness/liveness probes, volume and network requirements, and a minimal cluster quickstart validation path.
+
 # Output Formats / MIME Types
 
 By default we advertise the standard MVT type:
